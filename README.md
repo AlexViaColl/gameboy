@@ -18,7 +18,8 @@ $ ./gb <path to ROM>
 ## References
 [Pan Docs](https://gbdev.io/pandocs/) \
 [Gameboy Instruction set](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) \
-[LR35902 Assembler and Disassembler](https://github.com/herrhotzenplotz/lr35902as/)
+[LR35902 Assembler and Disassembler](https://github.com/herrhotzenplotz/lr35902as/) \
+[GameBoy CPU Manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf)
 
 ## License
 [MIT](./LICENSE)

@@ -281,19 +281,29 @@ Inst gb_fetch_inst(GameBoy *gb)
     uint8_t first = gb->memory[gb->PC];
     uint8_t *data = &gb->memory[gb->PC];
 
+    // TODO: Use a Table-driven approach to determine instruction size!!!
     // 1-byte instructions
     if (first == 0x00) {
         return (Inst){.data = data, .size = 1};
-    } else if ( // SUB reg
+    } else if ( // DEC reg8
         first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
         first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
     ) {
+        return (Inst){.data = data, .size = 1};
+    } else if ( // INC reg8
+        first == 0x04 || first == 0x14 || first == 0x24 || first == 0x34 ||
+        first == 0x0C || first == 0x1C || first == 0x2C || first == 0x3C
+    ) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first == 0x0B || first == 0x1B || first == 0x2B || first == 0x3B) {
         return (Inst){.data = data, .size = 1};
     } else if (first == 0x22 || first == 0x32 || first == 0x2A || first == 0x3A) {
         return (Inst){.data = data, .size = 1};
     } else if (first == 0x32) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x77) {
+    } else if (first >= 0x40 && first <= 0x7F) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first >= 0x80 && first <= 0xBF) {
         return (Inst){.data = data, .size = 1};
     } else if (first == 0xAF) {
         return (Inst){.data = data, .size = 1};
@@ -325,6 +335,8 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 3};
     } else if (first == 0xC3) {
         return (Inst){.data = data, .size = 3};
+    } else if (first == 0xCD) {
+        return (Inst){.data = data, .size = 3};
     } else if (first == 0xEA || first == 0xFA) {
         return (Inst){.data = data, .size = 3};
     }
@@ -342,13 +354,26 @@ void gb_exec(GameBoy *gb, Inst inst)
             // NOP
             printf("NOP\n");
             gb->PC += inst.size;
-        } else if ( // SUB reg
+        } else if ( // INC reg
+            first == 0x04 || first == 0x14 || first == 0x24 || first == 0x34 ||
+            first == 0x0C || first == 0x1C || first == 0x2C || first == 0x3C
+        ) {
+            Reg8 reg = (first >> 3) & 0x7;
+            printf("INC %s\n", gb_reg_to_str(reg));
+            gb_set_reg(gb, reg, gb_get_reg(gb, reg) + 1);
+            gb->PC += inst.size;
+        } else if ( // DEC reg
             first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
             first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
         ) {
             Reg8 reg = (first >> 3) & 0x7;
             printf("DEC %s\n", gb_reg_to_str(reg));
             gb_set_reg(gb, reg, gb_get_reg(gb, reg) - 1);
+            gb->PC += inst.size;
+        } else if (first == 0x0B || first == 0x1B || first == 0x2B || first == 0x3B) {
+            Reg16 reg = (first >> 4) & 0x3;
+            printf("DEC %s\n", gb_reg16_to_str(reg));
+            gb_set_reg16(gb, reg, gb_get_reg16(gb, reg) - 1);
             gb->PC += inst.size;
         } else if (
             first == 0x02 || first == 0x12 || first == 0x0A || first == 0x1A ||
@@ -393,8 +418,33 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("LD (HL-),A\n");
             gb->memory[gb->HL--] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
+        } else if (first >= 0x40 && first <= 0x7F) {
+            if (first == 0x76) {
+                printf("HALT\n");
+                exit(0);
+            }
+            Reg8 src = first & 0x7;
+            Reg8 dst = (first >> 3) & 0x7;
+            printf("LD %s,%s\n", gb_reg_to_str(dst), gb_reg_to_str(src));
+            uint8_t value = gb_get_reg(gb, src);
+            gb_set_reg(gb, dst, value);
+            gb->PC += inst.size;
+        } else if (first >= 0xB0 && first <= 0xB7) {
+            Reg8 reg = first & 0x7;
+            printf("OR %s\n", gb_reg_to_str(reg));
+            gb_set_reg(gb, REG_A, gb_get_reg(gb, reg) | gb_get_reg(gb, REG_A));
+            if (gb_get_reg(gb, REG_A) == 0) {
+                gb_set_flag(gb, Flag_Z, 1);
+            } else {
+                gb_set_flag(gb, Flag_Z, 0);
+            }
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0);
+            gb_set_flag(gb, Flag_C, 0);
+            gb->PC += inst.size;
         } else if (inst.data[0] == 0x77) {
             printf("LD (HL),A\n");
+            assert(0);
             gb->memory[gb->HL] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
         } else if ((inst.data[0] >> 4) == 0xA) {
@@ -477,6 +527,11 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("LD %s, 0x%04X\n", gb_reg16_to_str(reg), n);
             gb_set_reg16(gb, reg, n);
             gb->PC += inst.size;
+        } else if (first == 0xCD) {
+            printf("CALL 0x%04X\n", n);
+            gb->SP -= 2;
+            gb->memory[gb->SP] = gb->PC;
+            gb->PC = n;
         } else if (first == 0xEA) {
             printf("LD (0x%04X),A\n", n);
             gb->memory[n] = gb_get_reg(gb, REG_A);
@@ -529,6 +584,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     memcpy(gb->memory, raw, size);
 
     gb->PC = 0x100;
+    // Should we set SP = $FFFE as specified in GBCPUman.pdf ???
 }
 
 void gb_load_rom_file(GameBoy *gb, const char *path)
@@ -538,6 +594,76 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     uint8_t *raw = read_entire_file(path, &size);
     gb_load_rom(gb, raw, size);
     free(raw);
+}
+
+void gb_render_logo(SDL_Renderer *renderer, int width, int height)
+{
+    // The Logo is 48x8 pixels
+    int pixel_width = (width/2) / (12*4);
+    int pixel_height = (height/2) / 8;
+    int xstart = (width/2) - (24*pixel_width);
+    int ystart = (height/2) - (4*pixel_height);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+    int xoffset = xstart;
+    int yoffset = ystart;
+    for (int i = 0; i < 24; i++) {
+        uint8_t b = NINTENDO_LOGO[i];
+        uint8_t first_row = b >> 4;
+        uint8_t second_row = b & 0xf;
+
+        for (int j = 0; j < 4; j++) {
+            if ((first_row & 0x8) != 0) {
+                SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
+                SDL_RenderFillRect(renderer, &rect);
+            }
+            first_row <<= 1;
+        }
+        for (int j = 0; j < 4; j++) {
+            if ((second_row & 0x8) != 0) {
+                SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
+                SDL_RenderFillRect(renderer, &rect);
+            }
+            second_row <<= 1;
+        }
+
+        yoffset = yoffset + 2*pixel_height;
+        if (i & 0x1) {
+            yoffset = ystart;
+            xoffset = xoffset + 4*pixel_width;
+        }
+    }
+
+    // Second half
+    xoffset = xstart;
+    yoffset = ystart + pixel_height*4;
+    for (int i = 24; i < 48; i++) {
+        uint8_t b = NINTENDO_LOGO[i];
+        uint8_t first_row = b >> 4;
+        uint8_t second_row = b & 0xf;
+
+        for (int j = 0; j < 4; j++) {
+            if ((first_row & 0x8) != 0) {
+                SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
+                SDL_RenderFillRect(renderer, &rect);
+            }
+            first_row <<= 1;
+        }
+        for (int j = 0; j < 4; j++) {
+            if ((second_row & 0x8) != 0) {
+                SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
+                SDL_RenderFillRect(renderer, &rect);
+            }
+            second_row <<= 1;
+        }
+
+        yoffset = yoffset + 2*pixel_height;
+        if (i & 0x1) {
+            yoffset = ystart + pixel_height*4;
+            xoffset = xoffset + 4*pixel_width;
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -550,6 +676,7 @@ int main(int argc, char **argv)
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
 
+#if 0
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
@@ -563,7 +690,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    // GPU rendering
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, 0);
     if (!renderer) {
         fprintf(stderr, "Failed to create renderer\n");
@@ -581,81 +707,11 @@ int main(int argc, char **argv)
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // First half
-        //SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        //SDL_Rect rect = {.x = 0, .y = 0, .w = width, .h = height/2};
-        //SDL_RenderFillRect(renderer, &rect);
-
-        // The Logo is 48x8 pixels
-        int pixel_width = (width/2) / (12*4);
-        int pixel_height = (height/2) / 8;
-        int xstart = (width/2) - (24*pixel_width);
-        int ystart = (height/2) - (4*pixel_height);
-
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-
-        int xoffset = xstart;
-        int yoffset = ystart;
-        for (int i = 0; i < 24; i++) {
-            uint8_t b = NINTENDO_LOGO[i];
-            uint8_t first_row = b >> 4;
-            uint8_t second_row = b & 0xf;
-
-            for (int j = 0; j < 4; j++) {
-                if ((first_row & 0x8) != 0) {
-                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                first_row <<= 1;
-            }
-            for (int j = 0; j < 4; j++) {
-                if ((second_row & 0x8) != 0) {
-                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                second_row <<= 1;
-            }
-
-            yoffset = yoffset + 2*pixel_height;
-            if (i & 0x1) {
-                yoffset = ystart;
-                xoffset = xoffset + 4*pixel_width;
-            }
-        }
-
-        // Second half
-        xoffset = xstart;
-        yoffset = ystart + pixel_height*4;
-        for (int i = 24; i < 48; i++) {
-            uint8_t b = NINTENDO_LOGO[i];
-            uint8_t first_row = b >> 4;
-            uint8_t second_row = b & 0xf;
-
-            for (int j = 0; j < 4; j++) {
-                if ((first_row & 0x8) != 0) {
-                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                first_row <<= 1;
-            }
-            for (int j = 0; j < 4; j++) {
-                if ((second_row & 0x8) != 0) {
-                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                second_row <<= 1;
-            }
-
-            yoffset = yoffset + 2*pixel_height;
-            if (i & 0x1) {
-                yoffset = ystart + pixel_height*4;
-                xoffset = xoffset + 4*pixel_width;
-            }
-        }
+        gb_render_logo(renderer, width, height);
 
         SDL_RenderPresent(renderer);
     }
-    exit(0);
+#endif
 
     while (true) {
         printf("%04X: ", gb.PC);
