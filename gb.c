@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,11 @@ const uint8_t NINTENDO_LOGO[] = {
     0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 };
 
+typedef struct Inst {
+    uint8_t *data;
+    size_t size;
+} Inst;
+
 typedef struct GameBoy {
     // CPU freq:        4.194304 MHz
     // Horizontal sync: 9.198 KHz
@@ -23,6 +29,8 @@ typedef struct GameBoy {
     uint16_t HL;
     uint16_t SP; // Stack Pointer
     uint16_t PC; // Program Counter
+
+    uint8_t IME; // Interrupt master enable flag (Instructions EI, DI, RETI, ISR)
 
     // Tiles, Palettes and Layers
     // Tiles are 8x8 pixels (also called patterns or characters)
@@ -51,37 +59,7 @@ typedef struct RomHeader {
     char title[16];
 } RomHeader;
 
-uint8_t *read_entire_file(const char *path, size_t *size)
-{
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        fprintf(stderr, "Failed to open %s\n", path);
-        exit(1);
-    }
-    if (fseek(f, 0, SEEK_END) < 0) {
-        fprintf(stderr, "Failed to read file %s\n", path);
-        exit(1);
-    }
-
-    long file_size = ftell(f);
-    assert(file_size > 0);
-
-    rewind(f);
-
-    uint8_t *file_data = malloc(file_size);
-    assert(file_data);
-
-    size_t bytes_read = fread(file_data, 1, file_size, f);
-    if (bytes_read != (size_t)file_size) {
-        fprintf(stderr, "Could not read entire file\n");
-        exit(1);
-    }
-
-    if (size != NULL) {
-        *size = bytes_read;
-    }
-    return file_data;
-}
+uint8_t *read_entire_file(const char *path, size_t *size);
 
 void gb_dump(GameBoy *gb)
 {
@@ -95,7 +73,7 @@ void gb_dump(GameBoy *gb)
     printf("BC = 0x%04X (B = 0x%02X, C = 0x%02X)\n", gb->BC, gb->BC >> 8, gb->BC & 0xff);
     printf("DE = 0x%04X (D = 0x%02X, E = 0x%02X)\n", gb->DE, gb->DE >> 8, gb->DE & 0xff);
     printf("HL = 0x%04X (H = 0x%02X, L = 0x%02X)\n", gb->HL, gb->HL >> 8, gb->HL & 0xff);
-    printf("SP = 0x%04X, PC = 0x%04X\n", gb->SP, gb->PC);
+    printf("SP = 0x%04X, PC = 0x%04X, IME = %d\n", gb->SP, gb->PC, gb->IME);
 }
 
 void gb_set_zero_flag(GameBoy *gb)
@@ -106,31 +84,69 @@ void gb_set_zero_flag(GameBoy *gb)
     gb->AF |= 0x0080;
 }
 
+uint8_t gb_get_zero_flag(GameBoy *gb)
+{
+    return (gb->AF & 0x0080) == 0 ? 0 : 1;
+}
+
+typedef enum Reg8 {
+    REG_B = 0,
+    REG_C = 1,
+    REG_D = 2,
+    REG_E = 3,
+    REG_H = 4,
+    REG_L = 5,
+    REG_HL = 6,
+    REG_A = 7,
+} Reg8;
+
+const char* gb_reg_to_str(Reg8 r)
+{
+    switch (r) {
+        case REG_B: return "B";
+        case REG_C: return "C";
+        case REG_D: return "D";
+        case REG_E: return "E";
+        case REG_H: return "H";
+        case REG_L: return "L";
+        case REG_HL: return "(HL)";
+        case REG_A: return "A";
+        default: assert(0 && "Invalid register index");
+    }
+}
+
 void gb_set_reg(GameBoy *gb, uint8_t reg, uint8_t value)
 {
     // reg (0-7): B, C, D, E, H, L, (HL), A
     switch (reg) {
         case 0:
+            gb->BC &= 0x00ff;
             gb->BC |= (value << 8);
             break;
         case 1:
+            gb->BC &= 0xff00;
             gb->BC |= (value << 0);
             break;
         case 2:
+            gb->DE &= 0x00ff;
             gb->DE |= (value << 8);
             break;
         case 3:
+            gb->DE &= 0xff00;
             gb->DE |= (value << 0);
             break;
         case 4:
+            gb->HL &= 0x00ff;
             gb->HL |= (value << 8);
             break;
         case 5:
+            gb->HL &= 0xff00;
             gb->HL |= (value << 0);
             break;
         case 6:
             assert(0 && "(HL) not implemented");
         case 7:
+            gb->AF &= 0x00ff;
             gb->AF |= (value << 8);
             break;
         default:
@@ -163,14 +179,72 @@ uint8_t gb_get_reg(GameBoy *gb, uint8_t reg)
     }
 }
 
-void gb_exec(GameBoy *gb, uint8_t *inst, size_t inst_size)
+Inst gb_fetch_inst(GameBoy *gb)
 {
-    if (inst_size == 1) {
-        if (inst[0] == 0x00) {
+    uint8_t first = gb->memory[gb->PC];
+    // is it a single-byte instruction ???
+    uint8_t *data = &gb->memory[gb->PC];
+    if (first == 0x00) {
+        return (Inst){.data = data, .size = 1};
+    } else if ( // SUB reg
+        first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
+        first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
+    ) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first == 0x32) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first == 0xAF) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first == 0xF3) {
+        return (Inst){.data = data, .size = 1};
+    } else if ( // LD reg,d8
+        first == 0x06 || first == 0x16 || first == 0x26 || first == 0x36 ||
+        first == 0x0E || first == 0x1E || first == 0x2E || first == 0x3E
+    ) {
+        return (Inst){.data = data, .size = 2};
+    } else if (first == 0x0E) {
+        return (Inst){.data = data, .size = 2};
+    } else if (first == 0x20 || first == 0x30 || first == 0x28 || first == 0x38) {
+        // 0x20 (NZ), 0x30 (NC), 0x28 (Z), 0x38 (C)
+        return (Inst){.data = data, .size = 2};
+    } else if (first == 0xE0 || first == 0xF0) {
+        return (Inst){.data = data, .size = 2};
+    } else if (first == 0x21) {
+        return (Inst){.data = data, .size = 3};
+    } else if (first == 0xC3) {
+        return (Inst){.data = data, .size = 3};
+    } else if (first == 0xEA || first == 0xFA) {
+        return (Inst){.data = data, .size = 3};
+    }
+
+    printf("%02X\n", first);
+    assert(0 && "Not implemented");
+}
+
+void gb_exec(GameBoy *gb, Inst inst)
+{
+    uint8_t first = inst.data[0];
+    if (inst.size == 1) {
+        if (inst.data[0] == 0x00) {
             // NOP
-        } else if ((inst[0] >> 4) == 0xA) {
+            printf("NOP\n");
+            gb->PC += inst.size;
+        } else if ( // SUB reg
+            first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
+            first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
+        ) {
+            Reg8 reg = (first >> 3) & 0x7;
+            printf("DEC %s\n", gb_reg_to_str(reg));
+            gb_set_reg(gb, reg, gb_get_reg(gb, reg) - 1);
+            gb->PC += inst.size;
+        } else if (inst.data[0] == 0x32) {
+            printf("LD (HL-),A\n");
+            gb->memory[gb->HL--] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
+        } else if ((inst.data[0] >> 4) == 0xA) {
             // A = A xor r
-            int reg = inst[0] & 0xf;
+            printf("XOR ??\n");
+            int reg = inst.data[0] & 0xf;
             assert(reg >= 8 && reg <= 0xf);
 
             uint8_t A = (gb->AF >> 8);
@@ -179,16 +253,62 @@ void gb_exec(GameBoy *gb, uint8_t *inst, size_t inst_size)
             if ((A ^ r) == 0) {
                 gb_set_zero_flag(gb);
             }
+            gb->PC += inst.size;
+        } else if (first == 0xF3) {
+            printf("DI\n");
+            gb->IME = 0;
+            gb->PC += inst.size;
+        } else {
+            printf("%02X\n", inst.data[0]);
+            assert(0 && "Instruction not implemented");
+        }
+    } else if (inst.size == 2) {
+        if (inst.data[0] == 0x06) {
+            printf("LD B,0x%02X\n", inst.data[1]);
+            gb_set_reg(gb, REG_B, inst.data[1]);
+            gb->PC += inst.size;
+        } else if ( // LD reg,d8
+            first == 0x06 || first == 0x16 || first == 0x26 || first == 0x36 ||
+            first == 0x0E || first == 0x1E || first == 0x2E || first == 0x3E
+        ) {
+            Reg8 reg = (first >> 3) & 0x7;
+            printf("LD %s,0x%02X\n", gb_reg_to_str(reg), inst.data[1]);
+            gb_set_reg(gb, reg, inst.data[1]);
+            gb->PC += inst.size;
+        } else if (inst.data[0] == 0x20) {
+            printf("JR NZ,0x%02X\n", inst.data[1]);
+            if (!gb_get_zero_flag(gb)) {
+                printf("Jump taken\n");
+                gb->PC += inst.data[1]; // TODO: Handle negative values!!!
+            } else {
+                printf("Jump NOT taken\n");
+                gb->PC += inst.size;
+            }
+        } else if (inst.data[0] == 0xE0) {
+            printf("LDH (FF00+%02X),A\n", inst.data[1]);
+            gb->memory[0xFF00 + inst.data[1]] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
         } else {
             assert(0 && "Instruction not implemented");
         }
-    } else if (inst_size == 3) {
-        uint16_t n = inst[1] | (inst[2] << 8);
-        if (inst[0] == 0xC3) { // JP a16
+    } else if (inst.size == 3) {
+        uint16_t n = inst.data[1] | (inst.data[2] << 8);
+        if (inst.data[0] == 0xC3) { // JP a16
+            printf("JP 0x%04X\n", n);
             gb->PC = n;
+        } else if (inst.data[0] == 0x21) {
+            // TODO: 0x01, 0x11 and 0x31 are also LD reg,d16 instructions
+            printf("LD HL, 0x%04X\n", n);
+            gb->HL = n;
+            gb->PC += inst.size;
+        } else if (first == 0xEA) {
+            printf("LD (0x%04X),A\n", n);
+            gb->memory[n] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
         } else {
-            assert((inst[0] & 0xf) == 1);
-            int reg = inst[0] >> 4;
+            // Some kind of load??
+            assert((inst.data[0] & 0xf) == 1);
+            int reg = inst.data[0] >> 4;
             switch (reg) {
                 case 0:
                     gb->BC = n;
@@ -205,6 +325,7 @@ void gb_exec(GameBoy *gb, uint8_t *inst, size_t inst_size)
                 default:
                     assert(0 && "Unreachable");
             }
+            gb->PC += inst.size;
         }
     }
 }
@@ -231,7 +352,6 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     gb->PC = 0x100;
 }
 
-
 void gb_load_rom_file(GameBoy *gb, const char *path)
 {
     printf("Loading ROM \"%s\"...\n", path);
@@ -251,20 +371,34 @@ int main(int argc, char **argv)
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
 
-    {
-    uint8_t inst[] = {0x00}; // NOP
-    gb_exec(&gb, inst, 1);
+    while (true) {
+        printf("%04X:  ", gb.PC);
+        Inst inst = gb_fetch_inst(&gb);
+        for (size_t i = 0; i < inst.size; i++) {
+            printf("%02X ", inst.data[i]);
+        }
+        gb_exec(&gb, inst);
+        gb_dump(&gb);
+        //exit(1);
     }
 
     {
-    uint8_t inst[] = {0xC3, 0x50, 0x01}; // JP $0150
-    gb_exec(&gb, inst, 3);
+    uint8_t data[] = {0x00}; // NOP
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_exec(&gb, inst);
+    }
+
+    {
+    uint8_t data[] = {0xC3, 0x50, 0x01}; // JP $0150
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_exec(&gb, inst);
     }
 
     {
     gb.BC = 0xFFFF;
-    uint8_t inst[] = {0xA8}; // XOR B
-    gb_exec(&gb, inst, 1);
+    uint8_t data[] = {0xA8}; // XOR B
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_exec(&gb, inst);
     }
 
     {
@@ -273,11 +407,44 @@ int main(int argc, char **argv)
     }
 
     {
-    uint8_t inst[] = {0x21, 0x69, 0x00}; // LD HL, 0x69
-    gb_exec(&gb, inst, 3);
+    uint8_t data[] = {0x21, 0x69, 0x00}; // LD HL, 0x69
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_exec(&gb, inst);
     }
 
     gb_dump(&gb);
 
     return 0;
+}
+
+uint8_t *read_entire_file(const char *path, size_t *size)
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        fprintf(stderr, "Failed to open %s\n", path);
+        exit(1);
+    }
+    if (fseek(f, 0, SEEK_END) < 0) {
+        fprintf(stderr, "Failed to read file %s\n", path);
+        exit(1);
+    }
+
+    long file_size = ftell(f);
+    assert(file_size > 0);
+
+    rewind(f);
+
+    uint8_t *file_data = malloc(file_size);
+    assert(file_data);
+
+    size_t bytes_read = fread(file_data, 1, file_size, f);
+    if (bytes_read != (size_t)file_size) {
+        fprintf(stderr, "Could not read entire file\n");
+        exit(1);
+    }
+
+    if (size != NULL) {
+        *size = bytes_read;
+    }
+    return file_data;
 }
