@@ -51,42 +51,51 @@ typedef struct RomHeader {
     char title[16];
 } RomHeader;
 
+uint8_t *read_entire_file(const char *path, size_t *size)
+{
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        fprintf(stderr, "Failed to open %s\n", path);
+        exit(1);
+    }
+    if (fseek(f, 0, SEEK_END) < 0) {
+        fprintf(stderr, "Failed to read file %s\n", path);
+        exit(1);
+    }
+
+    long file_size = ftell(f);
+    assert(file_size > 0);
+
+    rewind(f);
+
+    uint8_t *file_data = malloc(file_size);
+    assert(file_data);
+
+    size_t bytes_read = fread(file_data, 1, file_size, f);
+    if (bytes_read != (size_t)file_size) {
+        fprintf(stderr, "Could not read entire file\n");
+        exit(1);
+    }
+
+    if (size != NULL) {
+        *size = bytes_read;
+    }
+    return file_data;
+}
+
 void gb_dump(GameBoy *gb)
 {
     uint8_t flags = gb->AF & 0xff;
-    printf("AF = 0x%04X\n", gb->AF);
-    printf("  A  = 0x%02X\n", gb->AF >> 8);
-    printf("  Flags: Z: %d,  C: %d,  H: %d,  N: %d\n",
+    printf("AF = 0x%04X (A = 0x%02X, Flags: Z: %d, C: %d, H: %d, N: %d)\n",
+        gb->AF, gb->AF >> 8,
         (flags & 0x80) > 0,
         (flags & 0x10) > 0,
         (flags & 0x20) > 0,
         (flags & 0x40) > 0);
-    printf("BC = 0x%04X\n", gb->BC);
-    printf("  B = 0x%02X,  C = 0x%02X\n", gb->BC >> 8, gb->BC & 0xff);
-    printf("DE = 0x%04X\n", gb->DE);
-    printf("  D = 0x%02X,  E = 0x%02X\n", gb->DE >> 8, gb->DE & 0xff);
-    printf("HL = 0x%04X\n", gb->HL);
-    printf("  H = 0x%02X,  L = 0x%02X\n", gb->HL >> 8, gb->HL & 0xff);
+    printf("BC = 0x%04X (B = 0x%02X, C = 0x%02X)\n", gb->BC, gb->BC >> 8, gb->BC & 0xff);
+    printf("DE = 0x%04X (D = 0x%02X, E = 0x%02X)\n", gb->DE, gb->DE >> 8, gb->DE & 0xff);
+    printf("HL = 0x%04X (H = 0x%02X, L = 0x%02X)\n", gb->HL, gb->HL >> 8, gb->HL & 0xff);
     printf("SP = 0x%04X, PC = 0x%04X\n", gb->SP, gb->PC);
-}
-
-void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
-{
-    assert(size > 0x14F);
-    RomHeader *header = (RomHeader*)(raw + 0x100);
-    printf("Title: %s\n", header->title);
-    if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
-        fprintf(stderr, "Invalid Nintendo Logo detected\n");
-    } else {
-        printf("Nintendo Logo present\n");
-    }
-    for (int i = 0; i < 4; i++) {
-        printf("0x%02X ", header->entry[i]);
-    }
-    printf("\n");
-
-    // TODO: start execution
-    gb->PC = 0x100;
 }
 
 void gb_set_zero_flag(GameBoy *gb)
@@ -180,7 +189,6 @@ void gb_exec(GameBoy *gb, uint8_t *inst, size_t inst_size)
         } else {
             assert((inst[0] & 0xf) == 1);
             int reg = inst[0] >> 4;
-            printf("LD reg(%d), 0x%04x\n", reg, n);
             switch (reg) {
                 case 0:
                     gb->BC = n;
@@ -201,36 +209,36 @@ void gb_exec(GameBoy *gb, uint8_t *inst, size_t inst_size)
     }
 }
 
-uint8_t *read_entire_file(const char *path, size_t *size)
+void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        fprintf(stderr, "Failed to open %s\n", path);
-        exit(1);
+    assert(size > 0x14F && size <= 0xFFFF);
+    RomHeader *header = (RomHeader*)(raw + 0x100);
+    printf("Title: %s\n", header->title);
+    printf("Logo: ");
+    if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
+        printf("NOT Present\n");
+    } else {
+        printf("Present\n");
     }
-    if (fseek(f, 0, SEEK_END) < 0) {
-        fprintf(stderr, "Failed to read file %s\n", path);
-        exit(1);
+    printf("Entry: ");
+    for (int i = 0; i < 4; i++) {
+        printf("0x%02X ", header->entry[i]);
     }
+    printf("\n\n");
 
-    long file_size = ftell(f);
-    assert(file_size > 0);
+    memcpy(gb->memory, raw, size);
 
-    rewind(f);
+    gb->PC = 0x100;
+}
 
-    uint8_t *file_data = malloc(file_size);
-    assert(file_data);
 
-    size_t bytes_read = fread(file_data, 1, file_size, f);
-    if (bytes_read != (size_t)file_size) {
-        fprintf(stderr, "Could not read entire file\n");
-        exit(1);
-    }
-
-    if (size != NULL) {
-        *size = bytes_read;
-    }
-    return file_data;
+void gb_load_rom_file(GameBoy *gb, const char *path)
+{
+    printf("Loading ROM \"%s\"...\n", path);
+    size_t size;
+    uint8_t *raw = read_entire_file(path, &size);
+    gb_load_rom(gb, raw, size);
+    free(raw);
 }
 
 int main(int argc, char **argv)
@@ -241,6 +249,7 @@ int main(int argc, char **argv)
     }
 
     GameBoy gb = {0};
+    gb_load_rom_file(&gb, argv[1]);
 
     {
     uint8_t inst[] = {0x00}; // NOP
@@ -269,12 +278,6 @@ int main(int argc, char **argv)
     }
 
     gb_dump(&gb);
-
-    size_t size;
-    uint8_t *raw = read_entire_file(argv[1], &size);
-    gb_load_rom(&gb, raw, size);
-
-    free(raw);
 
     return 0;
 }
