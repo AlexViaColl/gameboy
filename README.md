@@ -13,6 +13,8 @@ $ ./build.sh
 $ ./gb <path to ROM>
 ```
 
+![GameBoy Boot](./screenshot.png)
+
 ## References
 [Pan Docs](https://gbdev.io/pandocs/) \
 [Gameboy Instruction set](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) \

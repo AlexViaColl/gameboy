@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <SDL.h>
+
+#define SCALE  5
 #define WIDTH  160  // 20 tiles
 #define HEIGHT 144  // 18 tiles
 
@@ -547,6 +550,113 @@ int main(int argc, char **argv)
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
 
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "Failed to initialize SDL\n");
+        exit(1);
+    }
+
+    int width = SCALE*WIDTH;
+    int height = SCALE*HEIGHT;
+    SDL_Window *window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, 0);
+    if (!window) {
+        fprintf(stderr, "Failed to create window\n");
+        exit(1);
+    }
+
+    // GPU rendering
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, 0);
+    if (!renderer) {
+        fprintf(stderr, "Failed to create renderer\n");
+        exit(1);
+    }
+
+    SDL_Event e;
+    bool running = true;
+    while (running) {
+        SDL_PollEvent(&e);
+        if (e.type == SDL_QUIT) {
+            running = false;
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        // First half
+        //SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        //SDL_Rect rect = {.x = 0, .y = 0, .w = width, .h = height/2};
+        //SDL_RenderFillRect(renderer, &rect);
+
+        // The Logo is 48x8 pixels
+        int pixel_width = (width/2) / (12*4);
+        int pixel_height = (height/2) / 8;
+        int xstart = (width/2) - (24*pixel_width);
+        int ystart = (height/2) - (4*pixel_height);
+
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+        int xoffset = xstart;
+        int yoffset = ystart;
+        for (int i = 0; i < 24; i++) {
+            uint8_t b = NINTENDO_LOGO[i];
+            uint8_t first_row = b >> 4;
+            uint8_t second_row = b & 0xf;
+
+            for (int j = 0; j < 4; j++) {
+                if ((first_row & 0x8) != 0) {
+                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
+                    SDL_RenderFillRect(renderer, &rect);
+                }
+                first_row <<= 1;
+            }
+            for (int j = 0; j < 4; j++) {
+                if ((second_row & 0x8) != 0) {
+                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
+                    SDL_RenderFillRect(renderer, &rect);
+                }
+                second_row <<= 1;
+            }
+
+            yoffset = yoffset + 2*pixel_height;
+            if (i & 0x1) {
+                yoffset = ystart;
+                xoffset = xoffset + 4*pixel_width;
+            }
+        }
+
+        // Second half
+        xoffset = xstart;
+        yoffset = ystart + pixel_height*4;
+        for (int i = 24; i < 48; i++) {
+            uint8_t b = NINTENDO_LOGO[i];
+            uint8_t first_row = b >> 4;
+            uint8_t second_row = b & 0xf;
+
+            for (int j = 0; j < 4; j++) {
+                if ((first_row & 0x8) != 0) {
+                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset, .w = pixel_width, .h = pixel_height};
+                    SDL_RenderFillRect(renderer, &rect);
+                }
+                first_row <<= 1;
+            }
+            for (int j = 0; j < 4; j++) {
+                if ((second_row & 0x8) != 0) {
+                    SDL_Rect rect = {.x = xoffset + j*pixel_width, .y = yoffset + pixel_height, .w = pixel_width, .h = pixel_height};
+                    SDL_RenderFillRect(renderer, &rect);
+                }
+                second_row <<= 1;
+            }
+
+            yoffset = yoffset + 2*pixel_height;
+            if (i & 0x1) {
+                yoffset = ystart + pixel_height*4;
+                xoffset = xoffset + 4*pixel_width;
+            }
+        }
+
+        SDL_RenderPresent(renderer);
+    }
+    exit(0);
+
     while (true) {
         printf("%04X: ", gb.PC);
         Inst inst = gb_fetch_inst(&gb);
@@ -557,40 +667,7 @@ int main(int argc, char **argv)
         printf("\n");
         gb_exec(&gb, inst);
         gb_dump(&gb);
-        //exit(1);
     }
-
-    {
-    uint8_t data[] = {0x00}; // NOP
-    Inst inst = {.data = data, .size = sizeof(data)};
-    gb_exec(&gb, inst);
-    }
-
-    {
-    uint8_t data[] = {0xC3, 0x50, 0x01}; // JP $0150
-    Inst inst = {.data = data, .size = sizeof(data)};
-    gb_exec(&gb, inst);
-    }
-
-    {
-    gb.BC = 0xFFFF;
-    uint8_t data[] = {0xA8}; // XOR B
-    Inst inst = {.data = data, .size = sizeof(data)};
-    gb_exec(&gb, inst);
-    }
-
-    {
-    //uint8_t inst[] = {0x0A}; // LD A,(BC)
-    //gb_exec(&gb, inst, 1);
-    }
-
-    {
-    uint8_t data[] = {0x21, 0x69, 0x00}; // LD HL, 0x69
-    Inst inst = {.data = data, .size = sizeof(data)};
-    gb_exec(&gb, inst);
-    }
-
-    gb_dump(&gb);
 
     return 0;
 }
