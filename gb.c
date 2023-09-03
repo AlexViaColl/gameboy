@@ -59,6 +59,33 @@ typedef struct RomHeader {
     char title[16];
 } RomHeader;
 
+typedef enum Reg8 {
+    REG_B = 0,
+    REG_C = 1,
+    REG_D = 2,
+    REG_E = 3,
+    REG_H = 4,
+    REG_L = 5,
+    REG_HL_MEM = 6,
+    REG_A = 7,
+    REG_COUNT,
+} Reg8;
+
+typedef enum Reg16 {
+    REG_BC = 0,
+    REG_DE = 1,
+    REG_HL = 2,
+    REG_SP = 3,
+} Reg16;
+
+typedef enum Flag {
+    Flag_Z = 0,
+    Flag_N = 1,
+    Flag_H = 2,
+    Flag_C = 3,
+    //FLAG_COUNT,
+} Flag;
+
 uint8_t *read_entire_file(const char *path, size_t *size);
 
 void gb_dump(GameBoy *gb)
@@ -76,29 +103,52 @@ void gb_dump(GameBoy *gb)
     printf("SP = 0x%04X, PC = 0x%04X, IME = %d\n", gb->SP, gb->PC, gb->IME);
 }
 
-void gb_set_zero_flag(GameBoy *gb)
+void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value)
 {
     // A           F
     //             Z NH C
     // 0000 0000   0000 0000
-    gb->AF |= 0x0080;
+    switch (flag) {
+        case Flag_Z:
+            if (value) {
+                gb->AF |= 0x0080;
+            } else {
+                gb->AF &= ~0x0080;
+            }
+            break;
+        case Flag_N:
+            if (value) {
+                gb->AF |= 0x0020;
+            } else {
+                gb->AF &= ~0x0020;
+            }
+            break;
+        case Flag_H:
+            if (value) {
+                gb->AF |= 0x0010;
+            } else {
+                gb->AF &= ~0x0010;
+            }
+            break;
+        case Flag_C:
+            if (value) {
+                gb->AF |= 0x0008;
+            } else {
+                gb->AF &= ~0x0008;
+            }
+            break;
+    }
+}
+
+void gb_set_zero_flag(GameBoy *gb)
+{
+    gb_set_flag(gb, Flag_Z, 1);
 }
 
 uint8_t gb_get_zero_flag(GameBoy *gb)
 {
     return (gb->AF & 0x0080) == 0 ? 0 : 1;
 }
-
-typedef enum Reg8 {
-    REG_B = 0,
-    REG_C = 1,
-    REG_D = 2,
-    REG_E = 3,
-    REG_H = 4,
-    REG_L = 5,
-    REG_HL = 6,
-    REG_A = 7,
-} Reg8;
 
 const char* gb_reg_to_str(Reg8 r)
 {
@@ -109,8 +159,19 @@ const char* gb_reg_to_str(Reg8 r)
         case REG_E: return "E";
         case REG_H: return "H";
         case REG_L: return "L";
-        case REG_HL: return "(HL)";
+        case REG_HL_MEM: return "(HL)";
         case REG_A: return "A";
+        default: assert(0 && "Invalid register index");
+    }
+}
+
+const char* gb_reg16_to_str(Reg16 r)
+{
+    switch (r) {
+        case REG_BC: return "BC";
+        case REG_DE: return "DE";
+        case REG_HL: return "HL";
+        case REG_SP: return "SP";
         default: assert(0 && "Invalid register index");
     }
 }
@@ -144,7 +205,8 @@ void gb_set_reg(GameBoy *gb, uint8_t reg, uint8_t value)
             gb->HL |= (value << 0);
             break;
         case 6:
-            assert(0 && "(HL) not implemented");
+            gb->memory[gb->HL] = value;
+            break;
         case 7:
             gb->AF &= 0x00ff;
             gb->AF |= (value << 8);
@@ -179,11 +241,44 @@ uint8_t gb_get_reg(GameBoy *gb, uint8_t reg)
     }
 }
 
+void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value)
+{
+    switch (reg) {
+        case REG_BC:
+            gb->BC = value;
+            break;
+        case REG_DE:
+            gb->DE = value;
+            break;
+        case REG_HL:
+            gb->HL = value;
+            break;
+        case REG_SP:
+            gb->SP = value;
+            break;
+        default:
+            assert(0 && "Invalid register provided");
+    }
+}
+
+uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg)
+{
+    switch (reg) {
+        case REG_BC: return gb->BC;
+        case REG_DE: return gb->DE;
+        case REG_HL: return gb->HL;
+        case REG_SP: return gb->SP;
+        default:
+            assert(0 && "Invalid register provided");
+    }
+}
+
 Inst gb_fetch_inst(GameBoy *gb)
 {
     uint8_t first = gb->memory[gb->PC];
-    // is it a single-byte instruction ???
     uint8_t *data = &gb->memory[gb->PC];
+
+    // 1-byte instructions
     if (first == 0x00) {
         return (Inst){.data = data, .size = 1};
     } else if ( // SUB reg
@@ -191,13 +286,22 @@ Inst gb_fetch_inst(GameBoy *gb)
         first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
     ) {
         return (Inst){.data = data, .size = 1};
+    } else if (first == 0x22 || first == 0x32 || first == 0x2A || first == 0x3A) {
+        return (Inst){.data = data, .size = 1};
     } else if (first == 0x32) {
+        return (Inst){.data = data, .size = 1};
+    } else if (first == 0x77) {
         return (Inst){.data = data, .size = 1};
     } else if (first == 0xAF) {
         return (Inst){.data = data, .size = 1};
+    } else if (first == 0xE2) {
+        return (Inst){.data = data, .size = 1};
     } else if (first == 0xF3) {
         return (Inst){.data = data, .size = 1};
-    } else if ( // LD reg,d8
+    }
+
+    // 2-byte instructions
+    else if ( // LD reg,d8
         first == 0x06 || first == 0x16 || first == 0x26 || first == 0x36 ||
         first == 0x0E || first == 0x1E || first == 0x2E || first == 0x3E
     ) {
@@ -209,7 +313,12 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 2};
     } else if (first == 0xE0 || first == 0xF0) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0x21) {
+    } else if (first == 0xFE) {
+        return (Inst){.data = data, .size = 2};
+    }
+
+    // 3-byte instructions
+    else if (first == 0x01 || first == 0x11 || first == 0x21 || first == 0x31) {
         return (Inst){.data = data, .size = 3};
     } else if (first == 0xC3) {
         return (Inst){.data = data, .size = 3};
@@ -224,6 +333,7 @@ Inst gb_fetch_inst(GameBoy *gb)
 void gb_exec(GameBoy *gb, Inst inst)
 {
     uint8_t first = inst.data[0];
+    // 1-byte instructions
     if (inst.size == 1) {
         if (inst.data[0] == 0x00) {
             // NOP
@@ -237,9 +347,52 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("DEC %s\n", gb_reg_to_str(reg));
             gb_set_reg(gb, reg, gb_get_reg(gb, reg) - 1);
             gb->PC += inst.size;
+        } else if (
+            first == 0x02 || first == 0x12 || first == 0x0A || first == 0x1A ||
+            first == 0x22 || first == 0x32 || first == 0x2A || first == 0x3A
+        ) {
+            uint8_t reg_idx = (first >> 4) & 0x3;
+            uint8_t read_write = (first >> 3) & 0x1;
+            switch (reg_idx) {
+                case 0:
+                case 1:
+                    if (read_write == 0) {
+                        printf("LD (%s),A\n", gb_reg16_to_str(reg_idx));
+                        gb->memory[gb_get_reg16(gb, reg_idx)] = gb_get_reg(gb, REG_A);
+                    } else {
+                        printf("LD A,(%s)\n", gb_reg16_to_str(reg_idx));
+                        gb_set_reg(gb, REG_A, gb->memory[gb_get_reg16(gb, reg_idx)]);
+                    }
+                    break;
+                case 2:
+                    if (read_write == 0) {
+                        printf("LD (HL+),A\n");
+                        gb->memory[gb_get_reg16(gb, REG_HL)] = gb_get_reg(gb, REG_A);
+                    } else {
+                        printf("LD A,(HL+)\n");
+                        gb_set_reg(gb, REG_A, gb->memory[gb_get_reg16(gb, REG_HL)]);
+                    }
+                    gb_set_reg16(gb, REG_HL, gb_get_reg16(gb, REG_HL) + 1);
+                    break;
+                case 3:
+                    if (read_write == 0) {
+                        printf("LD (HL-),A\n");
+                        gb->memory[gb_get_reg16(gb, REG_HL)] = gb_get_reg(gb, REG_A);
+                    } else {
+                        printf("LD A,(HL-)\n");
+                        gb_set_reg(gb, REG_A, gb->memory[gb_get_reg16(gb, REG_HL)]);
+                    }
+                    gb_set_reg16(gb, REG_HL, gb_get_reg16(gb, REG_HL) - 1);
+                    break;
+            }
+            gb->PC += inst.size;
         } else if (inst.data[0] == 0x32) {
             printf("LD (HL-),A\n");
             gb->memory[gb->HL--] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
+        } else if (inst.data[0] == 0x77) {
+            printf("LD (HL),A\n");
+            gb->memory[gb->HL] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
         } else if ((inst.data[0] >> 4) == 0xA) {
             // A = A xor r
@@ -254,6 +407,10 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb_set_zero_flag(gb);
             }
             gb->PC += inst.size;
+        } else if (first == 0xE2) {
+            printf("LD (C),A\n");
+            gb->memory[gb_get_reg(gb, REG_C)] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
         } else if (first == 0xF3) {
             printf("DI\n");
             gb->IME = 0;
@@ -262,7 +419,9 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("%02X\n", inst.data[0]);
             assert(0 && "Instruction not implemented");
         }
-    } else if (inst.size == 2) {
+    }
+    // 2-byte instructions
+    else if (inst.size == 2) {
         if (inst.data[0] == 0x06) {
             printf("LD B,0x%02X\n", inst.data[1]);
             gb_set_reg(gb, REG_B, inst.data[1]);
@@ -288,18 +447,32 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("LDH (FF00+%02X),A\n", inst.data[1]);
             gb->memory[0xFF00 + inst.data[1]] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
+        } else if (inst.data[0] == 0xF0) {
+            printf("LDH A,(FF00+%02X)\n", inst.data[1]);
+            gb_set_reg(gb, REG_A, gb->memory[0xFF00 + inst.data[1]]);
+            gb->PC += inst.size;
+        } else if (inst.data[0] == 0xFE) {
+            printf("CP 0x%02X\n", inst.data[1]);
+            // Z 1 H C
+            int res = (int)gb_get_reg(gb, REG_A) - (int)inst.data[1];
+            if (res == 0) gb_set_flag(gb, Flag_Z, 1);
+            gb_set_flag(gb, Flag_N, 1);
+            if (res < 0) gb_set_flag(gb, Flag_C, 1);
+            gb->PC += inst.size;
         } else {
             assert(0 && "Instruction not implemented");
         }
-    } else if (inst.size == 3) {
+    }
+    // 3-byte instructions
+    else if (inst.size == 3) {
         uint16_t n = inst.data[1] | (inst.data[2] << 8);
         if (inst.data[0] == 0xC3) { // JP a16
             printf("JP 0x%04X\n", n);
             gb->PC = n;
-        } else if (inst.data[0] == 0x21) {
-            // TODO: 0x01, 0x11 and 0x31 are also LD reg,d16 instructions
-            printf("LD HL, 0x%04X\n", n);
-            gb->HL = n;
+        } else if (first == 0x01 || first == 0x11 || first == 0x21 || first == 0x31) {
+            Reg16 reg = first >> 4;
+            printf("LD %s, 0x%04X\n", gb_reg16_to_str(reg), n);
+            gb_set_reg16(gb, reg, n);
             gb->PC += inst.size;
         } else if (first == 0xEA) {
             printf("LD (0x%04X),A\n", n);
@@ -332,8 +505,10 @@ void gb_exec(GameBoy *gb, Inst inst)
 
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
-    assert(size > 0x14F && size <= 0xFFFF);
+    printf("Size: %lx\n", size);
+    assert(size > 0x14F);
     RomHeader *header = (RomHeader*)(raw + 0x100);
+    uint8_t cartridge_type = *(raw + 0x147);
     printf("Title: %s\n", header->title);
     printf("Logo: ");
     if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
@@ -345,6 +520,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     for (int i = 0; i < 4; i++) {
         printf("0x%02X ", header->entry[i]);
     }
+    printf("\nCartridge Type: 0x%02X\n", cartridge_type);
     printf("\n\n");
 
     memcpy(gb->memory, raw, size);
@@ -372,11 +548,13 @@ int main(int argc, char **argv)
     gb_load_rom_file(&gb, argv[1]);
 
     while (true) {
-        printf("%04X:  ", gb.PC);
+        printf("%04X: ", gb.PC);
         Inst inst = gb_fetch_inst(&gb);
-        for (size_t i = 0; i < inst.size; i++) {
-            printf("%02X ", inst.data[i]);
+        printf("raw: %02X", inst.data[0]);
+        for (size_t i = 1; i < inst.size; i++) {
+            printf(" %02X", inst.data[i]);
         }
+        printf("\n");
         gb_exec(&gb, inst);
         gb_dump(&gb);
         //exit(1);
