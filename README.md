@@ -10,7 +10,13 @@
 ## Quick Start
 ```console
 $ ./build.sh
+$ ./gb <path to ROM>
 ```
+
+## References
+[Pan Docs](https://gbdev.io/pandocs/)
+[Gameboy Instruction set](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
+[LR35902 Assembler and Disassembler](https://github.com/herrhotzenplotz/lr35902as/)
 
 ## License
 [MIT](./LICENSE)
