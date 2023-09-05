@@ -22,6 +22,10 @@
 #define VSYNC_MS    (1000.0 / VSYNC)
 #define HSYNC_MS    (1000.0 / HSYNC)
 
+#define rLCDC   0xFF40
+#define rLY     0xFF44
+#define rBGP    0xFF47
+
 const uint8_t NINTENDO_LOGO[] = {
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
     0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
@@ -906,16 +910,20 @@ void gb_tick(GameBoy *gb, double dt_ms)
 
 void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer)
 {
-    (void)gb;
+    if (gb->memory[0xFF40] == 0) return;
+
+    uint8_t bgp = gb->memory[rBGP];
+    uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
+
     int yoffset = 0;
     int xoffset = 0;
     for (int row = 0; row < TILE_ROWS; row++) {
         for (int col = 0; col < TILE_COLS; col++) {
             // TODO: Take extra offset/offscreen tiles into account
-            //uint8_t tile_idx = gb->memory[0x9800 + row*TILE_COLS + col];
-            //const uint8_t *tile = gb->memory + 0x9000 + tile_idx*TILE_SIZE;
-            uint8_t tile_idx = TILEMAP_DATA[row*TILE_COLS + col];
-            const uint8_t *tile = TILE_DATA + tile_idx*TILE_SIZE;
+            uint8_t tile_idx = gb->memory[0x9800 + row*(TILE_COLS+12) + col];
+            const uint8_t *tile = gb->memory + 0x9000 + tile_idx*TILE_SIZE;
+            //uint8_t tile_idx = TILEMAP_DATA[row*TILE_COLS + col];
+            //const uint8_t *tile = TILE_DATA + tile_idx*TILE_SIZE;
 
             // TODO: Extract this into a separate function
             for (int tile_row = 0; tile_row < 8; tile_row++) {
@@ -930,7 +938,7 @@ void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer)
                     high_bitplane <<= 1;
 
                     uint8_t color_idx = (bit1 << 1) | bit0;
-                    uint8_t color = PALETTE[color_idx];
+                    uint8_t color = PALETTE[bgp_tbl[color_idx]];
 
                     SDL_SetRenderDrawColor(renderer, color, color, color, 255);
                     SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
