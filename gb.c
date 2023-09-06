@@ -22,6 +22,10 @@
 #define VSYNC_MS    (1000.0 / VSYNC)
 #define HSYNC_MS    (1000.0 / HSYNC)
 
+#define VRAM_TILES      0x8000
+//#define VRAM_TILES      0x9000
+#define VRAM_TILEMAP    0x9800
+
 #define rLCDC   0xFF40
 #define rLY     0xFF44
 #define rBGP    0xFF47
@@ -372,7 +376,7 @@ uint8_t gb_get_reg(GameBoy *gb, uint8_t reg)
         case 5:
             return (gb->HL & 0xff);
         case 6:
-            assert(0 && "(HL) not implemented");
+            return gb->memory[gb->HL];
         case 7:
             return (gb->AF >> 8);
         default:
@@ -421,14 +425,16 @@ Inst gb_fetch_inst(GameBoy *gb)
     // 1-byte instructions
     if (first == 0x00) {
         return (Inst){.data = data, .size = 1};
-    } else if ( // DEC reg8
-        first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
-        first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
-    ) {
+    } else if (first == 0x09 || first == 0x19 || first == 0x29 || first == 0x39) {
         return (Inst){.data = data, .size = 1};
     } else if ( // INC reg8
         first == 0x04 || first == 0x14 || first == 0x24 || first == 0x34 ||
         first == 0x0C || first == 0x1C || first == 0x2C || first == 0x3C
+    ) {
+        return (Inst){.data = data, .size = 1};
+    } else if ( // DEC reg8
+        first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
+        first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
     ) {
         return (Inst){.data = data, .size = 1};
     } else if (first == 0x03 || first == 0x13 || first == 0x23 || first == 0x33) { // INC reg16
@@ -510,8 +516,14 @@ void gb_exec(GameBoy *gb, Inst inst)
     // 1-byte instructions
     if (inst.size == 1) {
         if (first == 0x00) {
-            // NOP
             printf("NOP\n");
+            gb->PC += inst.size;
+        } else if (first == 0x09 || first == 0x19 || first == 0x29 || first == 0x39) {
+            Reg16 src = (first >> 4) & 0x3;
+            printf("ADD HL,%s\n", gb_reg16_to_str(src));
+            int res = gb_get_reg16(gb, REG_HL) + gb_get_reg16(gb, src);
+            gb_set_reg16(gb, REG_HL, res);
+            // TODO: flags
             gb->PC += inst.size;
         } else if ( // INC reg
             first == 0x04 || first == 0x14 || first == 0x24 || first == 0x34 ||
@@ -908,30 +920,26 @@ void gb_tick(GameBoy *gb, double dt_ms)
     gb->memory[0xFF44] += 1;
 }
 
-void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer)
+bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
 {
-    if (gb->memory[0xFF40] == 0) return;
+    if (gb->memory[0xFF40] == 0) return false;
 
-    uint8_t bgp = gb->memory[rBGP];
+    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10 | 01|00
     uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
+
+    uint16_t bg_win_tile_data_offset = (gb->memory[rLCDC] & 0x10) ? 0x8000 : 0x9000;  // 00010000 (LCDCF_BG8000)
 
     int yoffset = 0;
     int xoffset = 0;
     for (int row = 0; row < TILE_ROWS; row++) {
         for (int col = 0; col < TILE_COLS; col++) {
-            // TODO: Take extra offset/offscreen tiles into account
-            uint8_t tile_idx = gb->memory[0x9800 + row*(TILE_COLS+12) + col];
-            const uint8_t *tile = gb->memory + 0x9000 + tile_idx*TILE_SIZE;
-            //uint8_t tile_idx = TILEMAP_DATA[row*TILE_COLS + col];
-            //const uint8_t *tile = TILE_DATA + tile_idx*TILE_SIZE;
+            uint8_t tile_idx = gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col];
+            const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
 
-            // TODO: Extract this into a separate function
             for (int tile_row = 0; tile_row < 8; tile_row++) {
                 uint8_t low_bitplane = tile[tile_row*2+0];
                 uint8_t high_bitplane = tile[tile_row*2+1];
                 for (int tile_col = 0; tile_col < 8; tile_col++) {
-                    // low:  0x80 - 1000 0000
-                    // high: 0x08 - 0000 1000
                     uint8_t bit0 = (low_bitplane & 0x80) >> 7;
                     uint8_t bit1 = (high_bitplane & 0x80) >> 7;
                     low_bitplane <<= 1;
@@ -943,15 +951,15 @@ void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer)
                     SDL_SetRenderDrawColor(renderer, color, color, color, 255);
                     SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
                     SDL_RenderFillRect(renderer, &rect);
-
                 }
             }
-
             xoffset += 8*SCALE;
         }
         yoffset += 8*SCALE;
         xoffset = 0;
     }
+
+    return true;
 }
 
 void gb_render_logo(SDL_Renderer *renderer, int width, int height)
@@ -1080,10 +1088,11 @@ int main(int argc, char **argv)
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        gb_render_tile(&gb, renderer);
+        if (gb_render(&gb, renderer)) {
         //gb_render_logo(renderer, width, height);
 
-        SDL_RenderPresent(renderer);
+            SDL_RenderPresent(renderer);
+        }
     }
 #endif
     exit(0);
