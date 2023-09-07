@@ -831,16 +831,20 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
 {
     if (gb->memory[0xFF40] == 0) return false;
 
-    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10 | 01|00
+    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
     uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
 
-    uint16_t bg_win_tile_data_offset = (gb->memory[rLCDC] & 0x10) ? 0x8000 : 0x9000;  // 00010000 (LCDCF_BG8000)
+    bool bg8000_mode = (gb->memory[rLCDC] & 0x10);
+    uint16_t bg_win_tile_data_offset = bg8000_mode ? 0x8000 : 0x9000;
 
     int yoffset = 0;
     int xoffset = 0;
     for (int row = 0; row < TILE_ROWS; row++) {
         for (int col = 0; col < TILE_COLS; col++) {
-            uint8_t tile_idx = gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col];
+            int tile_idx = bg8000_mode ?
+                gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col] :
+                (int8_t)gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col];
+
             const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
 
             for (int tile_row = 0; tile_row < 8; tile_row++) {
