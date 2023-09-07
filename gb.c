@@ -548,7 +548,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (first >= 0xB0 && first <= 0xB7) {
             Reg8 reg = first & 0x7;
             printf("OR %s\n", gb_reg_to_str(reg));
-            int res = gb_get_reg(gb, REG_A) | gb_get_reg(gb, reg);
+            uint8_t res = gb_get_reg(gb, REG_A) | gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             gb_set_flag(gb, Flag_N, 0);
@@ -607,17 +607,17 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->PC += inst.size;
             }
         } else if (first == 0xC1 || first == 0xD1 || first == 0xE1 || first == 0xF1) {
-            Reg16 reg = (first >> 3) & 0x7;
+            Reg16 reg = (first >> 4) & 0x3;
             printf("POP %s\n", gb_reg16_to_str(reg));
             uint8_t low = gb->memory[gb->SP+0];
             uint8_t high = gb->memory[gb->SP+1];
-            gb_set_reg(gb, reg, (high << 8) | low);
+            gb_set_reg16(gb, reg, (high << 8) | low);
             gb->SP += 2;
             gb->PC += inst.size;
         } else if (first == 0xC5 || first == 0xD5 || first == 0xE5 || first == 0xF5) {
-            Reg16 reg = (first >> 3) & 0x7; // 11|000|101
-            uint16_t value = gb_get_reg16(gb, reg);
+            Reg16 reg = (first >> 4) & 0x3;
             printf("PUSH %s\n", gb_reg16_to_str(reg));
+            uint16_t value = gb_get_reg16(gb, reg);
             gb->SP -= 2;
             gb->memory[gb->SP+0] = (value & 0xff);
             gb->memory[gb->SP+1] = (value >> 8);
