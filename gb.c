@@ -522,7 +522,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (first >= 0x40 && first <= 0x7F) {
             if (first == 0x76) {
                 printf("HALT\n");
-                exit(0);
+                return;
             }
             Reg8 src = first & 0x7;
             Reg8 dst = (first >> 3) & 0x7;
