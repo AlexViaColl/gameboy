@@ -18,6 +18,7 @@
 #define VIEWPORT_COLS 20
 #define VIEWPORT_ROWS 18
 #define TILE_PIXELS 8
+#define OAM_COUNT 40
 
 #define CPU_FREQ    4194304.0 // 4.19 MHz
 #define VSYNC       59.73
@@ -812,6 +813,7 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     free(raw);
 }
 
+static bool step_debug;
 void gb_tick(GameBoy *gb, double dt_ms)
 {
     gb->elapsed_ms += dt_ms;
@@ -819,19 +821,26 @@ void gb_tick(GameBoy *gb, double dt_ms)
     //if (gb->timer_sec <= 0.0) {
         gb->timer_sec += 1000.0;
 
-        printf("%04X: ", gb->PC);
+        //printf("%04X: ", gb->PC);
         Inst inst = gb_fetch_inst(gb);
-        printf("raw: %02X", inst.data[0]);
-        for (size_t i = 1; i < inst.size; i++) {
-            printf(" %02X", inst.data[i]);
-        }
-        printf("\n");
+        //printf("raw: %02X", inst.data[0]);
+        //for (size_t i = 1; i < inst.size; i++) {
+        //    printf(" %02X", inst.data[i]);
+        //}
+        //printf("\n");
         gb_exec(gb, inst);
-        gb_dump(gb);
+        //gb_dump(gb);
+
+        if (gb->PC == 0x01CA) {
+            //exit(1);
+            //step_debug = true;
+        }
+
+        if (step_debug) getchar();
     //}
 
     // HACK: increase the LY register without taking VSync/HSync into consideration!!!
-    gb->memory[0xFF44] += 1;
+    gb->memory[0xFF44] += 72;
 }
 
 void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset)
@@ -904,6 +913,18 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
     }
 
     // Render OBJ
+    if ((gb->memory[rLCDC] & 0x02) != 0) {
+        for (int i = 0; i < 1; i++) {
+            uint8_t *obj = gb->memory + 0xFE00 + i*4;
+            int y = *(obj+0) - 16;
+            int x = *(obj+1) - 8;
+            int tile_id = *(obj+2);
+            const uint8_t *tile = gb->memory + 0x8000 + tile_id*TILE_SIZE;
+            gb_render_tile(gb, renderer, tile, x*SCALE, y*SCALE);
+            //printf("OBJ[%2d] x: %d, y: %d, tileID: %d, attributes: 0x%02X\n",
+            //    i, x, y, tileID, *(obj+3));
+        }
+    }
 
     return true;
 }
@@ -1053,14 +1074,16 @@ int main(int argc, char **argv)
         }
 
         // Update
-        gb_tick(&gb, dt_ms);
+        for (int i = 0; i < 5; i++) {
+            gb_tick(&gb, dt_ms);
+        }
 
         // Render
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
         if (gb_render(&gb, renderer)) {
-        //gb_render_logo(renderer, width, height);
+            //gb_render_logo(renderer, width, height);
 
             //SDL_Rect dst = {.x = WIDTH*SCALE + 10, .y = 0, .w = surface->w, .h = surface->h};
             //SDL_RenderCopy(renderer, texture, NULL, &dst);
@@ -1084,7 +1107,6 @@ int main(int argc, char **argv)
             SDL_RenderFillRect(renderer, &r);
             r = (SDL_Rect){WIDTH*SCALE, 0, thickness, HEIGHT*SCALE};
             SDL_RenderFillRect(renderer, &r);
-            //SDL_RenderDrawLine(renderer, WIDTH*SCALE, 0, WIDTH*SCALE, HEIGHT*SCALE);
 
             SDL_RenderPresent(renderer);
         }
