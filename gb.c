@@ -1056,6 +1056,7 @@ int main(int argc, char **argv)
         //printf("dt: %f ms\n", dt_ms);
 
         // Input
+        // TODO: fix unresponsiveness
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
             running = false;
