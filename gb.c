@@ -6,13 +6,18 @@
 #include <string.h>
 
 #include <SDL.h>
+#include <SDL_ttf.h>
 
-#define SCALE  5
+#define SCALE  3
 #define WIDTH  160  // 20 tiles
 #define HEIGHT 144  // 18 tiles
 
-#define TILE_COLS 20
-#define TILE_ROWS 18
+#define MAX_TILE_IDS (128*3)
+#define TILEMAP_ROWS 32
+#define TILEMAP_COLS 32
+#define VIEWPORT_COLS 20
+#define VIEWPORT_ROWS 18
+#define TILE_PIXELS 8
 
 #define CPU_FREQ    4194304.0 // 4.19 MHz
 #define VSYNC       59.73
@@ -29,6 +34,8 @@
 #define rLCDC   0xFF40
 #define rLY     0xFF44
 #define rBGP    0xFF47
+#define rWY     0xFF4A
+#define rWX     0xFF4B
 
 const uint8_t NINTENDO_LOGO[] = {
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
@@ -827,48 +834,76 @@ void gb_tick(GameBoy *gb, double dt_ms)
     gb->memory[0xFF44] += 1;
 }
 
-bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
+void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset)
 {
-    if (gb->memory[0xFF40] == 0) return false;
-
     uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
     uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
 
+    for (int tile_row = 0; tile_row < TILE_PIXELS; tile_row++) {
+        uint8_t low_bitplane = tile[tile_row*2+0];
+        uint8_t high_bitplane = tile[tile_row*2+1];
+        for (int tile_col = 0; tile_col < TILE_PIXELS; tile_col++) {
+            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
+            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
+            low_bitplane <<= 1;
+            high_bitplane <<= 1;
+
+            uint8_t color_idx = (bit1 << 1) | bit0;
+            uint8_t color = PALETTE[bgp_tbl[color_idx]];
+
+            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+            SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
+            SDL_RenderFillRect(renderer, &rect);
+        }
+    }
+}
+
+bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
+{
+    if ((gb->memory[rLCDC] & 0x80) == 0) return false;
+    if ((gb->memory[rLCDC] & 0x01) == 0) return false;
+
+    // Render the BG
     bool bg8000_mode = (gb->memory[rLCDC] & 0x10);
     uint16_t bg_win_tile_data_offset = bg8000_mode ? 0x8000 : 0x9000;
 
     int yoffset = 0;
     int xoffset = 0;
-    for (int row = 0; row < TILE_ROWS; row++) {
-        for (int col = 0; col < TILE_COLS; col++) {
+    for (int row = 0; row < TILEMAP_ROWS/*VIEWPORT_ROWS*/; row++) {
+        for (int col = 0; col < TILEMAP_COLS/*VIEWPORT_COLS*/; col++) {
             int tile_idx = bg8000_mode ?
-                gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col] :
-                (int8_t)gb->memory[VRAM_TILEMAP + row*(TILE_COLS+12) + col];
+                gb->memory[VRAM_TILEMAP + row*(TILEMAP_COLS) + col] :
+                (int8_t)gb->memory[VRAM_TILEMAP + row*(TILEMAP_COLS) + col];
 
             const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
-
-            for (int tile_row = 0; tile_row < 8; tile_row++) {
-                uint8_t low_bitplane = tile[tile_row*2+0];
-                uint8_t high_bitplane = tile[tile_row*2+1];
-                for (int tile_col = 0; tile_col < 8; tile_col++) {
-                    uint8_t bit0 = (low_bitplane & 0x80) >> 7;
-                    uint8_t bit1 = (high_bitplane & 0x80) >> 7;
-                    low_bitplane <<= 1;
-                    high_bitplane <<= 1;
-
-                    uint8_t color_idx = (bit1 << 1) | bit0;
-                    uint8_t color = PALETTE[bgp_tbl[color_idx]];
-
-                    SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-                    SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-            }
-            xoffset += 8*SCALE;
+            gb_render_tile(gb, renderer, tile, xoffset, yoffset);
+            xoffset += TILE_PIXELS*SCALE;
         }
-        yoffset += 8*SCALE;
+        yoffset += TILE_PIXELS*SCALE;
         xoffset = 0;
     }
+
+    // Render Window
+    if ((gb->memory[rLCDC] & 0x20) != 0) {
+        uint16_t win_tile_data_offset = (gb->memory[rLCDC] & 0x40) ? 0x9C00 : 0x9800;
+        int win_x = gb->memory[rWX] - 7;
+        int win_y = gb->memory[rWY];
+        yoffset = win_y*SCALE;
+        xoffset = win_x*SCALE;
+
+        for (int row = 0; row < VIEWPORT_ROWS; row++) {
+            for (int col = 0; col < VIEWPORT_COLS; col++) {
+                int tile_idx = gb->memory[win_tile_data_offset + row*(TILEMAP_COLS) + col];
+                const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
+                gb_render_tile(gb, renderer, tile, xoffset, yoffset);
+                xoffset += TILE_PIXELS*SCALE;
+            }
+            yoffset += TILE_PIXELS*SCALE;
+            xoffset = win_x*SCALE;
+        }
+    }
+
+    // Render OBJ
 
     return true;
 }
@@ -950,6 +985,8 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    bool show_tile_grid = false;
+
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
 
@@ -958,9 +995,15 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
     }
+    if (TTF_Init() != 0) {
+        fprintf(stderr, "Failed to initialize SDL_ttf\n");
+        exit(1);
+    }
+    TTF_Font *font = TTF_OpenFont("./fonts/NotoSans-Regular.ttf", 25);
+    assert(font);
 
-    int width = SCALE*WIDTH;
-    int height = SCALE*HEIGHT;
+    int width = SCALE*WIDTH + SCALE*WIDTH;
+    int height = SCALE*HEIGHT + SCALE*HEIGHT;
     SDL_Window *window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, 0);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
@@ -972,6 +1015,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to create renderer\n");
         exit(1);
     }
+
+    SDL_Color color = { 255, 255, 255, 255 };
+    SDL_Surface *surface = TTF_RenderText_Solid(font, "Registers", color);
+    printf("Surface is %d x %d\n", surface->w, surface->h);
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
 
     SDL_Event e;
     bool running = true;
@@ -990,6 +1038,18 @@ int main(int argc, char **argv)
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
             running = false;
+        } else if (e.type == SDL_KEYDOWN) {
+            printf("Keysym: %d\n", e.key.keysym.sym);
+            switch (e.key.keysym.sym) {
+                case SDLK_ESCAPE:
+                    running = false;
+                    break;
+                case SDLK_g:
+                    show_tile_grid = !show_tile_grid;
+                    break;
+                default:
+                    break;
+            }
         }
 
         // Update
@@ -1001,6 +1061,30 @@ int main(int argc, char **argv)
 
         if (gb_render(&gb, renderer)) {
         //gb_render_logo(renderer, width, height);
+
+            //SDL_Rect dst = {.x = WIDTH*SCALE + 10, .y = 0, .w = surface->w, .h = surface->h};
+            //SDL_RenderCopy(renderer, texture, NULL, &dst);
+            (void)texture;
+
+            if (show_tile_grid) {
+                SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
+                for (int i = 0; i <= 32; i++) {
+                    int y = i*TILE_PIXELS*SCALE;
+                    SDL_RenderDrawLine(renderer, 0, y, 32*TILE_PIXELS*SCALE, y);
+                }
+                for (int i = 0; i <= 32; i++) {
+                    int x = i*TILE_PIXELS*SCALE;
+                    SDL_RenderDrawLine(renderer, x, 0, x, 32*TILE_PIXELS*SCALE);
+                }
+            }
+
+            SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+            int thickness = 5;
+            SDL_Rect r = {0, HEIGHT*SCALE, WIDTH*SCALE, thickness};
+            SDL_RenderFillRect(renderer, &r);
+            r = (SDL_Rect){WIDTH*SCALE, 0, thickness, HEIGHT*SCALE};
+            SDL_RenderFillRect(renderer, &r);
+            //SDL_RenderDrawLine(renderer, WIDTH*SCALE, 0, WIDTH*SCALE, HEIGHT*SCALE);
 
             SDL_RenderPresent(renderer);
         }
