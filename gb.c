@@ -579,6 +579,32 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             // TODO: Flags
             gb->PC += inst.size;
+            gb_dump(gb);
+            //exit(1);
+        } else if (first >= 0x90 && first <= 0x97) {
+            gb_dump(gb);
+            Reg8 reg = first & 0x7;
+            printf("SUB A,%s\n", gb_reg_to_str(reg));
+            int res = gb_get_reg(gb, REG_A) - gb_get_reg(gb, reg);
+            uint8_t c = gb_get_reg(gb, REG_A) >= gb_get_reg(gb, reg) ? 0 : 1;
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 1);
+            gb_set_flag(gb, Flag_H, 1); // TODO
+            gb_set_flag(gb, Flag_C, c);
+            gb->PC += inst.size;
+            gb_dump(gb);
+            //exit(1);
+        } else if (first >= 0x98 && first <= 0x9F) {
+            Reg8 reg = first & 0x7;
+            printf("SBC A,%s\n", gb_reg_to_str(reg));
+            exit(1);
+            int res = gb_get_flag(gb, Flag_C) + gb_get_reg(gb, REG_A) +
+                gb_get_reg(gb, reg);
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            // TODO: Flags
+            gb->PC += inst.size;
         } else if (first >= 0xB0 && first <= 0xB7) {
             Reg8 reg = first & 0x7;
             printf("OR %s\n", gb_reg_to_str(reg));
@@ -630,16 +656,24 @@ void gb_exec(GameBoy *gb, Inst inst)
             Flag f = (first >> 3) & 0x3;
             uint8_t low = gb->memory[gb->SP+0];
             uint8_t high = gb->memory[gb->SP+1];
-            gb->SP += 2;
             uint16_t addr = (high << 8) | low;
             printf("RET %s (address: 0x%04X)\n", gb_flag_to_str(f), addr);
+            gb_dump(gb);
             if (gb_get_flag(gb, f)) {
                 printf("Taken\n");
+                gb->SP += 2;
                 gb->PC = addr;
             } else {
                 printf("NOT Taken\n");
                 gb->PC += inst.size;
             }
+        } else if (first == 0xC9) {
+            uint8_t low = gb->memory[gb->SP+0];
+            uint8_t high = gb->memory[gb->SP+1];
+            gb->SP += 2;
+            uint16_t addr = (high << 8) | low;
+            printf("RET (address: 0x%04X)\n", addr);
+            gb->PC = addr;
         } else if (first == 0xC1 || first == 0xD1 || first == 0xE1 || first == 0xF1) {
             Reg16 reg = (first >> 4) & 0x3;
             printf("POP %s\n", gb_reg16_to_str(reg));
@@ -664,13 +698,6 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->memory[gb->SP+0] = (gb->PC & 0xff);
             gb->memory[gb->SP+1] = (gb->PC >> 8);
             gb->PC = n;
-        } else if (first == 0xC9) {
-            uint8_t low = gb->memory[gb->SP+0];
-            uint8_t high = gb->memory[gb->SP+1];
-            gb->SP += 2;
-            uint16_t addr = (high << 8) | low;
-            printf("RET (address: 0x%04X)\n", addr);
-            gb->PC = addr;
         } else {
             printf("%02X\n", inst.data[0]);
             assert(0 && "Instruction not implemented");
@@ -818,6 +845,19 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t value = gb_get_reg(gb, reg);
             gb_set_reg(gb, reg, ((value & 0xF) << 4) | ((value & 0xF0) >> 4));
             gb->PC += inst.size;
+        } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            printf("SRL %s\n", gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg);
+            uint8_t res = value >> 1;
+            gb_set_reg(gb, reg, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0);
+            gb_set_flag(gb, Flag_C, value & 0x1);
+            gb->PC += inst.size;
+        } else {
+            assert(0 && "Instruction not implemented");
         }
     }
 
