@@ -8,7 +8,7 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 
-#define SCALE  3
+#define SCALE  5
 #define WIDTH  160  // 20 tiles
 #define HEIGHT 144  // 18 tiles
 
@@ -32,11 +32,16 @@
 //#define VRAM_TILES      0x9000
 #define VRAM_TILEMAP    0x9800
 
+#define rP1     0xFF00
 #define rLCDC   0xFF40
 #define rLY     0xFF44
 #define rBGP    0xFF47
 #define rWY     0xFF4A
 #define rWX     0xFF4B
+
+#define P1F_GET_BTN  0x10
+#define P1F_GET_DPAD 0x20
+#define P1F_GET_NONE (P1F_GET_BTN | P1F_GET_DPAD)
 
 const uint8_t NINTENDO_LOGO[] = {
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
@@ -91,6 +96,13 @@ typedef struct GameBoy {
     // FF80-FFFE     High RAM (HRAM)
     // FFFF-FFFF     Interrup Enable Register (IE)
     uint8_t memory[0xFFFF];
+
+    uint8_t button_a;
+    uint8_t button_b;
+    uint8_t dpad_up;
+    uint8_t dpad_down;
+    uint8_t dpad_left;
+    uint8_t dpad_right;
 
     double elapsed_ms;  // Milliseconds elapsed since the start
     double timer_sec;   // Timer for counting seconds
@@ -396,11 +408,18 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 2};
     } else if (first == 0x20 || first == 0x30 || first == 0x28 || first == 0x38) {
         return (Inst){.data = data, .size = 2};
+    } else if (/* 0xC6, 0xD6, */first == 0xE6 || first == 0xF6) {
+        return (Inst){.data = data, .size = 2};
     } else if (first == 0xE0 || first == 0xF0) {
         return (Inst){.data = data, .size = 2};
     } else if (first == 0xE8) {
         return (Inst){.data = data, .size = 2};
     } else if (first == 0xFE) {
+        return (Inst){.data = data, .size = 2};
+    }
+
+    // Prefix CB
+    else if (first == 0xCB) {
         return (Inst){.data = data, .size = 2};
     }
 
@@ -651,7 +670,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         }
     }
     // 2-byte instructions
-    else if (inst.size == 2) {
+    else if (inst.size == 2 && first != 0xCB) {
         if (first == 0x06) {
             printf("LD B,0x%02X\n", inst.data[1]);
             gb_set_reg(gb, REG_B, inst.data[1]);
@@ -693,7 +712,56 @@ void gb_exec(GameBoy *gb, Inst inst)
             }
         } else if (first == 0xE0) {
             printf("LDH (FF00+%02X),A\n", inst.data[1]);
-            gb->memory[0xFF00 + inst.data[1]] = gb_get_reg(gb, REG_A);
+            uint8_t value = gb_get_reg(gb, REG_A);
+            gb->memory[0xFF00 + inst.data[1]] = value;
+            if (inst.data[1] == 0) {
+                if (value == P1F_GET_BTN) {
+                    printf("Requesting BTN state\n");
+                    if (gb->button_a) {
+                        gb->memory[rP1] &= ~0x01;
+                    } else {
+                        gb->memory[rP1] |= 0x01;
+                    }
+                    if (gb->button_b) {
+                        gb->memory[rP1] &= ~0x02;
+                    } else {
+                        gb->memory[rP1] |= 0x02;
+                    }
+                } else if (value == P1F_GET_DPAD) {
+                    printf("Requesting DPAD state\n");
+                    if (gb->dpad_right) {
+                        gb->memory[rP1] &= ~0x01;
+                    } else {
+                        gb->memory[rP1] |= 0x01;
+                    }
+                    if (gb->dpad_left) {
+                        gb->memory[rP1] &= ~0x02;
+                    } else {
+                        gb->memory[rP1] |= 0x02;
+                    }
+                    if (gb->dpad_up) {
+                        gb->memory[rP1] &= ~0x04;
+                    } else {
+                        gb->memory[rP1] |= 0x04;
+                    }
+                    if (gb->dpad_down) {
+                        gb->memory[rP1] &= ~0x08;
+                    } else {
+                        gb->memory[rP1] |= 0x08;
+                    }
+                } else if (value == P1F_GET_NONE) {
+                    // TODO
+                }
+            }
+            gb->PC += inst.size;
+        } else if (first == 0xE6) {
+            printf("AND A, 0x%02X\n", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) & inst.data[1];
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 1);
+            gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (first == 0xE8) {
             printf("ADD SP,0x%02X\n", inst.data[1]);
@@ -702,6 +770,15 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (first == 0xF0) {
             printf("LDH A,(FF00+%02X)\n", inst.data[1]);
             gb_set_reg(gb, REG_A, gb->memory[0xFF00 + inst.data[1]]);
+            gb->PC += inst.size;
+        } else if (first == 0xF6) {
+            printf("OR A, 0x%02X\n", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) | inst.data[1];
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0);
+            gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (first == 0xFE) {
             printf("CP 0x%02X\n", inst.data[1]);
@@ -715,6 +792,18 @@ void gb_exec(GameBoy *gb, Inst inst)
             assert(0 && "Instruction not implemented");
         }
     }
+
+    // Prefix CB
+    else if (inst.size == 2 && inst.data[0] == 0xCB) {
+        if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
+            Reg8 reg = inst.data[1] & 0x7;
+            printf("SWAP %s\n", gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg);
+            gb_set_reg(gb, reg, ((value & 0xF) << 4) | ((value & 0xF0) >> 4));
+            gb->PC += inst.size;
+        }
+    }
+
     // 3-byte instructions
     else if (inst.size == 3) {
         uint16_t n = inst.data[1] | (inst.data[2] << 8);
@@ -1023,8 +1112,8 @@ int main(int argc, char **argv)
     TTF_Font *font = TTF_OpenFont("./fonts/NotoSans-Regular.ttf", 25);
     assert(font);
 
-    int width = SCALE*WIDTH + SCALE*WIDTH;
-    int height = SCALE*HEIGHT + SCALE*HEIGHT;
+    int width = SCALE*WIDTH; // + SCALE*WIDTH;
+    int height = SCALE*HEIGHT; // + SCALE*HEIGHT;
     SDL_Window *window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, 0);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
@@ -1060,14 +1149,34 @@ int main(int argc, char **argv)
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
             running = false;
-        } else if (e.type == SDL_KEYDOWN) {
+        } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
             printf("Keysym: %d\n", e.key.keysym.sym);
             switch (e.key.keysym.sym) {
                 case SDLK_ESCAPE:
                     running = false;
                     break;
                 case SDLK_g:
-                    show_tile_grid = !show_tile_grid;
+                    if (e.key.type == SDL_KEYDOWN) {
+                        show_tile_grid = !show_tile_grid;
+                    }
+                    break;
+                case SDLK_s:
+                    gb.button_a = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_a:
+                    gb.button_b = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_UP:
+                    gb.dpad_up = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_DOWN:
+                    gb.dpad_down = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_RIGHT:
+                    gb.dpad_right = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_LEFT:
+                    gb.dpad_left = e.key.type == SDL_KEYDOWN ? 1 : 0;
                     break;
                 default:
                     break;
