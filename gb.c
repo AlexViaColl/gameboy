@@ -415,7 +415,7 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 2};
     } else if (first == 0x20 || first == 0x30 || first == 0x28 || first == 0x38) {
         return (Inst){.data = data, .size = 2};
-    } else if (/* 0xC6, 0xD6, */first == 0xE6 || first == 0xF6) {
+    } else if (/* 0xC6,*/first == 0xD6 || first == 0xE6 || first == 0xF6) {
         return (Inst){.data = data, .size = 2};
     } else if (first == 0xE0 || first == 0xF0) {
         return (Inst){.data = data, .size = 2};
@@ -760,6 +760,16 @@ void gb_exec(GameBoy *gb, Inst inst)
                     // TODO
                 }
             }
+            gb->PC += inst.size;
+        } else if (first == 0xD6) {
+            printf("SUB A, 0x%02X\n", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) - inst.data[1];
+            uint8_t c = gb_get_reg(gb, REG_A) < inst.data[1] ? 1 : 0;
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 1);
+            gb_set_flag(gb, Flag_H, 0); // TODO: compute H flag
+            gb_set_flag(gb, Flag_C, c);
             gb->PC += inst.size;
         } else if (first == 0xE6) {
             printf("AND A, 0x%02X\n", inst.data[1]);
