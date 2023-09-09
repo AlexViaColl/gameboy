@@ -939,7 +939,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
     gb->memory[0xFF44] += 72;
 }
 
-void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset)
+void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset, bool transparency)
 {
     uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
     uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
@@ -956,9 +956,11 @@ void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, in
             uint8_t color_idx = (bit1 << 1) | bit0;
             uint8_t color = PALETTE[bgp_tbl[color_idx]];
 
-            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-            SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
-            SDL_RenderFillRect(renderer, &rect);
+            if (!transparency || color_idx != 0) {
+                SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+                SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
+                SDL_RenderFillRect(renderer, &rect);
+            }
         }
     }
 }
@@ -981,7 +983,7 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
                 (int8_t)gb->memory[VRAM_TILEMAP + row*(TILEMAP_COLS) + col];
 
             const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
-            gb_render_tile(gb, renderer, tile, xoffset, yoffset);
+            gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
             xoffset += TILE_PIXELS*SCALE;
         }
         yoffset += TILE_PIXELS*SCALE;
@@ -1000,7 +1002,7 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
             for (int col = 0; col < VIEWPORT_COLS; col++) {
                 int tile_idx = gb->memory[win_tile_data_offset + row*(TILEMAP_COLS) + col];
                 const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
-                gb_render_tile(gb, renderer, tile, xoffset, yoffset);
+                gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
                 xoffset += TILE_PIXELS*SCALE;
             }
             yoffset += TILE_PIXELS*SCALE;
@@ -1016,8 +1018,7 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
             int x = *(obj+1) - 8;
             int tile_id = *(obj+2);
             const uint8_t *tile = gb->memory + 0x8000 + tile_id*TILE_SIZE;
-            // TODO: Handle transparency!!
-            gb_render_tile(gb, renderer, tile, x*SCALE, y*SCALE);
+            gb_render_tile(gb, renderer, tile, x*SCALE, y*SCALE, true);
             //printf("OBJ[%2d] x: %d, y: %d, tileID: %d, attributes: 0x%02X\n",
             //    i, x, y, tileID, *(obj+3));
         }
