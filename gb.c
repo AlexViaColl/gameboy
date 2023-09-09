@@ -39,6 +39,13 @@
 #define rWY     0xFF4A
 #define rWX     0xFF4B
 
+#define LCDCF_ON        0x80
+#define LCDCF_WIN9C00   0x40
+#define LCDCF_WINON     0x20
+#define LCDCF_BG8000    0x10
+#define LCDCF_OBJON     0x02
+#define LCDCF_BGON      0x01
+
 #define P1F_GET_BTN  0x10
 #define P1F_GET_DPAD 0x20
 #define P1F_GET_NONE (P1F_GET_BTN | P1F_GET_DPAD)
@@ -958,11 +965,11 @@ void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, in
 
 bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
 {
-    if ((gb->memory[rLCDC] & 0x80) == 0) return false;
-    if ((gb->memory[rLCDC] & 0x01) == 0) return false;
+    if ((gb->memory[rLCDC] & LCDCF_ON  /*0x80*/) == 0) return false;
+    if ((gb->memory[rLCDC] & LCDCF_BGON/*0x01*/) == 0) return false;
 
     // Render the BG
-    bool bg8000_mode = (gb->memory[rLCDC] & 0x10);
+    bool bg8000_mode = (gb->memory[rLCDC] & LCDCF_BG8000/*0x10*/);
     uint16_t bg_win_tile_data_offset = bg8000_mode ? 0x8000 : 0x9000;
 
     int yoffset = 0;
@@ -982,8 +989,8 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
     }
 
     // Render Window
-    if ((gb->memory[rLCDC] & 0x20) != 0) {
-        uint16_t win_tile_data_offset = (gb->memory[rLCDC] & 0x40) ? 0x9C00 : 0x9800;
+    if ((gb->memory[rLCDC] & LCDCF_WINON/*0x20*/) != 0) {
+        uint16_t win_tile_data_offset = (gb->memory[rLCDC] & LCDCF_WIN9C00/*0x40*/) ? 0x9C00 : 0x9800;
         int win_x = gb->memory[rWX] - 7;
         int win_y = gb->memory[rWY];
         yoffset = win_y*SCALE;
@@ -1002,13 +1009,14 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
     }
 
     // Render OBJ
-    if ((gb->memory[rLCDC] & 0x02) != 0) {
-        for (int i = 0; i < 1; i++) {
+    if ((gb->memory[rLCDC] & LCDCF_OBJON/*0x02*/) != 0) {
+        for (int i = 0; i < OAM_COUNT; i++) {
             uint8_t *obj = gb->memory + 0xFE00 + i*4;
             int y = *(obj+0) - 16;
             int x = *(obj+1) - 8;
             int tile_id = *(obj+2);
             const uint8_t *tile = gb->memory + 0x8000 + tile_id*TILE_SIZE;
+            // TODO: Handle transparency!!
             gb_render_tile(gb, renderer, tile, x*SCALE, y*SCALE);
             //printf("OBJ[%2d] x: %d, y: %d, tileID: %d, attributes: 0x%02X\n",
             //    i, x, y, tileID, *(obj+3));
