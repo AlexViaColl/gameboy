@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include <SDL.h>
-#include <SDL_ttf.h>
 
 #define SCALE  5
 #define WIDTH  160  // 20 tiles
@@ -65,6 +64,12 @@ const uint8_t TILE[TILE_SIZE] = {
     0x00, 0xff, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80,
     0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80
 };
+
+// Debug Status
+static bool step_debug;
+static size_t bp_count = 0;
+#define MAX_BREAKPOINTS 16
+static uint16_t bp[MAX_BREAKPOINTS];
 
 typedef struct Inst {
     uint8_t *data;
@@ -152,12 +157,13 @@ typedef enum Flag {
 } Flag;
 
 uint8_t *read_entire_file(const char *path, size_t *size);
+bool get_command(GameBoy *gb);
 
 void gb_dump(GameBoy *gb)
 {
     uint8_t flags = gb->AF & 0xff;
-    printf("AF = 0x%04X (A = 0x%02X, Flags: Z: %d, C: %d, H: %d, N: %d)\n",
-        gb->AF, gb->AF >> 8,
+    printf("AF = 0x%04X (A = 0x%02X (%d), Flags: Z: %d, C: %d, H: %d, N: %d)\n",
+        gb->AF, gb->AF >> 8, gb->AF >> 8,
         (flags & 0x80) > 0,
         (flags & 0x10) > 0,
         (flags & 0x20) > 0,
@@ -352,102 +358,102 @@ uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg)
 
 Inst gb_fetch_inst(GameBoy *gb)
 {
-    uint8_t first = gb->memory[gb->PC];
+    uint8_t b = gb->memory[gb->PC];
     uint8_t *data = &gb->memory[gb->PC];
 
     // TODO: Use a Table-driven approach to determine instruction size!!!
     // 1-byte instructions
-    if (first == 0x00) {
+    if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x09 || first == 0x19 || first == 0x29 || first == 0x39) {
+    } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
+        return (Inst){.data = data, .size = 1};
+    } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
         return (Inst){.data = data, .size = 1};
     } else if ( // INC reg8
-        first == 0x04 || first == 0x14 || first == 0x24 || first == 0x34 ||
-        first == 0x0C || first == 0x1C || first == 0x2C || first == 0x3C
+        b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
+        b == 0x0C || b == 0x1C || b == 0x2C || b == 0x3C
     ) {
         return (Inst){.data = data, .size = 1};
     } else if ( // DEC reg8
-        first == 0x05 || first == 0x15 || first == 0x25 || first == 0x35 ||
-        first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
+        b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
+        b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
     ) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x03 || first == 0x13 || first == 0x23 || first == 0x33) { // INC reg16
+    } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x0B || first == 0x1B || first == 0x2B || first == 0x3B) { // DEC reg16
+    } else if (b == 0x0B || b == 0x1B || b == 0x2B || b == 0x3B) { // DEC reg16
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x0A || first == 0x1A) {
+    } else if (b == 0x0A || b == 0x1A) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x22 || first == 0x32 || first == 0x2A || first == 0x3A) {
+    } else if (b == 0x22 || b == 0x32 || b == 0x2A || b == 0x3A) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0x02 || first == 0x12 || first == 0x32) {
+    } else if (b == 0x0F || b == 0x1F) {
         return (Inst){.data = data, .size = 1};
-    } else if (first >= 0x40 && first <= 0x7F) {
+    } else if (b >= 0x40 && b <= 0x7F) {
         return (Inst){.data = data, .size = 1};
-    } else if (first >= 0x80 && first <= 0xBF) {
+    } else if (b >= 0x80 && b <= 0xBF) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xAF) {
+    } else if (b == 0xAF) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xE2) {
+    } else if (b == 0xE2) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xF3 || first == 0xFB) {
+    } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xC0 || first == 0xD0 || first == 0xC8 || first == 0xD8) {
+    } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xC1 || first == 0xD1 || first == 0xE1 || first == 0xF1) {
+    } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) {
         return (Inst){.data = data, .size = 1};
-    } else if (first == 0xC5 || first == 0xD5 || first == 0xE5 || first == 0xF5) {
+    } else if (((b & 0xC0) == 0xC0) && ((b & 0x7) == 0x7)) { // RST
         return (Inst){.data = data, .size = 1};
-    } else if (((first & 0xC0) == 0xC0) && ((first & 0x7) == 0x7)) { // RST
-        return (Inst){.data = data, .size = 1};
-    } else if (first == 0xC9) {
+    } else if (b == 0xC9) {
         return (Inst){.data = data, .size = 1};
     }
 
     // 2-byte instructions
-    else if ( // LD reg,d8
-        first == 0x06 || first == 0x16 || first == 0x26 || first == 0x36 ||
-        first == 0x0E || first == 0x1E || first == 0x2E || first == 0x3E
+    else if ( // 8-bit Loads (LD B,n | LD C,n | LD D,n | LD E,n | LD H,n | LH L,n  **LD (HL),n** | **LD A,n**)
+        b == 0x06 || b == 0x0E || b == 0x16 || b == 0x1E ||
+        b == 0x26 || b == 0x2E || b == 0x36 || b == 0x3E
     ) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0x0E) {
+    } else if (b == 0x18) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0x18) {
+    } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0x20 || first == 0x30 || first == 0x28 || first == 0x38) {
+    } else if (b == 0x2F) {
         return (Inst){.data = data, .size = 2};
-    } else if (/* 0xC6,*/first == 0xD6 || first == 0xE6 || first == 0xF6) {
+    } else if (b == 0xC6 || b == 0xD6 || b == 0xE6 || b == 0xF6) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0xE0 || first == 0xF0) {
+    } else if (b == 0xE0 || b == 0xF0) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0xE8) {
+    } else if (b == 0xE8) {
         return (Inst){.data = data, .size = 2};
-    } else if (first == 0xFE) {
+    } else if (b == 0xFE) {
         return (Inst){.data = data, .size = 2};
     }
 
     // Prefix CB
-    else if (first == 0xCB) {
+    else if (b == 0xCB) {
         return (Inst){.data = data, .size = 2};
     }
 
     // 3-byte instructions
-    else if (first == 0x01 || first == 0x11 || first == 0x21 || first == 0x31) {
+    else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0x08) {
+    } else if (b == 0x08) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0xC3) {
+    } else if (b == 0xC3) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0xC4 || first == 0xD4 || first == 0xCC || first == 0xDC) {
+    } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0xC2 || first == 0xCA || first == 0xD2 || first == 0xDA) {
+    } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0xCD) {
+    } else if (b == 0xCD) {
         return (Inst){.data = data, .size = 3};
-    } else if (first == 0xEA || first == 0xFA) {
+    } else if (b == 0xEA || b == 0xFA) {
         return (Inst){.data = data, .size = 3};
     }
 
-    printf("%02X\n", first);
+    printf("%02X\n", b);
     assert(0 && "Not implemented");
 }
 
@@ -479,7 +485,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             first == 0x0D || first == 0x1D || first == 0x2D || first == 0x3D
         ) {
             Reg8 reg = (first >> 3) & 0x7;
-            printf("DEC %s\n", gb_reg_to_str(reg));
+            printf("%04X: DEC %s\n", gb->PC, gb_reg_to_str(reg));
             int res = gb_get_reg(gb, reg) - 1;
             gb_set_reg(gb, reg, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -499,6 +505,16 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (first == 0x12) {
             printf("LD (DE),A\n");
             gb->memory[gb_get_reg16(gb, REG_DE)] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
+        } else if (first == 0x22) {
+            printf("LD (HL+),A\n");
+            gb->memory[gb_get_reg16(gb, REG_HL)] = gb_get_reg(gb, REG_A);
+            gb_set_reg16(gb, REG_HL, gb_get_reg16(gb, REG_HL) + 1);
+            gb->PC += inst.size;
+        } else if (first == 0x32) {
+            printf("LD (HL-),A\n");
+            gb->memory[gb_get_reg16(gb, REG_HL)] = gb_get_reg(gb, REG_A);
+            gb_set_reg16(gb, REG_HL, gb_get_reg16(gb, REG_HL) - 1);
             gb->PC += inst.size;
         } else if (first == 0x03 || first == 0x13 || first == 0x23 || first == 0x33) { // INC reg16
             Reg16 reg = (first >> 4) & 0x3;
@@ -549,6 +565,17 @@ void gb_exec(GameBoy *gb, Inst inst)
                     break;
             }
             gb->PC += inst.size;
+        } else if (first == 0x0F) {
+            printf("RRCA\n");
+            uint8_t a = gb_get_reg(gb, REG_A);
+            uint8_t c = a & 1;
+            uint8_t res = (a >> 1) | (c << 7);
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0);
+            gb_set_flag(gb, Flag_C, c);
+            gb->PC += inst.size;
         } else if (first == 0x32) {
             printf("LD (HL-),A\n");
             gb->memory[gb->HL--] = gb_get_reg(gb, REG_A);
@@ -579,10 +606,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             // TODO: Flags
             gb->PC += inst.size;
-            gb_dump(gb);
-            //exit(1);
         } else if (first >= 0x90 && first <= 0x97) {
-            gb_dump(gb);
             Reg8 reg = first & 0x7;
             printf("SUB A,%s\n", gb_reg_to_str(reg));
             int res = gb_get_reg(gb, REG_A) - gb_get_reg(gb, reg);
@@ -593,8 +617,6 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_H, 1); // TODO
             gb_set_flag(gb, Flag_C, c);
             gb->PC += inst.size;
-            gb_dump(gb);
-            //exit(1);
         } else if (first >= 0x98 && first <= 0x9F) {
             Reg8 reg = first & 0x7;
             printf("SBC A,%s\n", gb_reg_to_str(reg));
@@ -618,11 +640,13 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (first >= 0xB8 && first <= 0xBF) {
             Reg8 reg = first & 0x7;
             printf("CP %s\n", gb_reg_to_str(reg));
-            int res = (int)gb_get_reg(gb, REG_A) - (int)gb_get_reg(gb, reg);
+            int a = (int)gb_get_reg(gb, REG_A);
+            int n = (int)gb_get_reg(gb, reg);
+            int res = a - n;
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             gb_set_flag(gb, Flag_N, 1);
             //gb_set_flag(gb, Flag_H, ???);
-            gb_set_flag(gb, Flag_C, res >= 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_C, a < n ? 1 : 0);
             gb->PC += inst.size;
         } else if (first >= 0xA0 && first <= 0xA7) {
             Reg8 reg = first & 0x7;
@@ -658,7 +682,6 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t high = gb->memory[gb->SP+1];
             uint16_t addr = (high << 8) | low;
             printf("RET %s (address: 0x%04X)\n", gb_flag_to_str(f), addr);
-            gb_dump(gb);
             if (gb_get_flag(gb, f)) {
                 printf("Taken\n");
                 gb->SP += 2;
@@ -709,6 +732,9 @@ void gb_exec(GameBoy *gb, Inst inst)
             printf("LD B,0x%02X\n", inst.data[1]);
             gb_set_reg(gb, REG_B, inst.data[1]);
             gb->PC += inst.size;
+        } else if (first == 0x10) {
+            printf("STOP\n");
+            exit(1);
         } else if (first == 0x18) {
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
             printf("JR %d\n", r8);
@@ -744,6 +770,12 @@ void gb_exec(GameBoy *gb, Inst inst)
                 printf("Jump NOT taken\n");
                 gb->PC += inst.size;
             }
+        } else if (first == 0x2F) {
+            printf("CPL\n");
+            gb_set_reg(gb, REG_A, ~gb_get_reg(gb, REG_A));
+            gb_set_flag(gb, Flag_N, 1);
+            gb_set_flag(gb, Flag_H, 1);
+            gb->PC += inst.size;
         } else if (first == 0xE0) {
             printf("LDH (FF00+%02X),A\n", inst.data[1]);
             uint8_t value = gb_get_reg(gb, REG_A);
@@ -788,6 +820,16 @@ void gb_exec(GameBoy *gb, Inst inst)
                 }
             }
             gb->PC += inst.size;
+        } else if (first == 0xC6) {
+            printf("ADD A, 0x%02X\n", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) + inst.data[1];
+            uint8_t c = res < gb_get_reg(gb, REG_A) ? 1 : 0;
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0); // TODO: compute H flag
+            gb_set_flag(gb, Flag_C, c);
+            gb->PC += inst.size;
         } else if (first == 0xD6) {
             printf("SUB A, 0x%02X\n", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) - inst.data[1];
@@ -826,11 +868,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (first == 0xFE) {
             printf("CP 0x%02X\n", inst.data[1]);
-            // Z 1 H C
-            int res = (int)gb_get_reg(gb, REG_A) - (int)inst.data[1];
+            int a = (int)gb_get_reg(gb, REG_A);
+            int n = (int)inst.data[1];
+            int res = a - n;
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             gb_set_flag(gb, Flag_N, 1);
-            gb_set_flag(gb, Flag_C, res >= 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_C, a < n ? 1 : 0);
             gb->PC += inst.size;
         } else {
             assert(0 && "Instruction not implemented");
@@ -959,7 +1002,6 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     free(raw);
 }
 
-static bool step_debug;
 void gb_tick(GameBoy *gb, double dt_ms)
 {
     gb->elapsed_ms += dt_ms;
@@ -967,26 +1009,14 @@ void gb_tick(GameBoy *gb, double dt_ms)
     //if (gb->timer_sec <= 0.0) {
         gb->timer_sec += 1000.0;
 
-        //printf("%04X: ", gb->PC);
-        Inst inst = gb_fetch_inst(gb);
-        //printf("raw: %02X", inst.data[0]);
-        //for (size_t i = 1; i < inst.size; i++) {
-        //    printf(" %02X", inst.data[i]);
-        //}
-        //printf("\n");
-        gb_exec(gb, inst);
-        //gb_dump(gb);
-
-        if (gb->PC == 0x01CA) {
-            //exit(1);
-            //step_debug = true;
+        if (get_command(gb)) {
+            Inst inst = gb_fetch_inst(gb);
+            gb_exec(gb, inst);
         }
-
-        if (step_debug) getchar();
     //}
 
     // HACK: increase the LY register without taking VSync/HSync into consideration!!!
-    gb->memory[0xFF44] += 72;
+    gb->memory[rLY] += 74;
 }
 
 void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset, bool transparency)
@@ -1147,6 +1177,7 @@ void gb_render_logo(SDL_Renderer *renderer, int width, int height)
     }
 }
 
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1156,20 +1187,14 @@ int main(int argc, char **argv)
 
     bool show_tile_grid = false;
 
+    //step_debug = true;
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
 
-#if 1
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
     }
-    if (TTF_Init() != 0) {
-        fprintf(stderr, "Failed to initialize SDL_ttf\n");
-        exit(1);
-    }
-    TTF_Font *font = TTF_OpenFont("./fonts/NotoSans-Regular.ttf", 25);
-    assert(font);
 
     int width = SCALE*WIDTH; // + SCALE*WIDTH;
     int height = SCALE*HEIGHT; // + SCALE*HEIGHT;
@@ -1184,11 +1209,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to create renderer\n");
         exit(1);
     }
-
-    SDL_Color color = { 255, 255, 255, 255 };
-    SDL_Surface *surface = TTF_RenderText_Solid(font, "Registers", color);
-    printf("Surface is %d x %d\n", surface->w, surface->h);
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
 
     SDL_Event e;
     bool running = true;
@@ -1209,7 +1229,6 @@ int main(int argc, char **argv)
         if (e.type == SDL_QUIT) {
             running = false;
         } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
-            printf("Keysym: %d\n", e.key.keysym.sym);
             switch (e.key.keysym.sym) {
                 case SDLK_ESCAPE:
                     running = false;
@@ -1218,6 +1237,9 @@ int main(int argc, char **argv)
                     if (e.key.type == SDL_KEYDOWN) {
                         show_tile_grid = !show_tile_grid;
                     }
+                    break;
+                case SDLK_SPACE:
+                    if (e.key.type == SDL_KEYDOWN) gb_dump(&gb);
                     break;
                 case SDLK_s:
                     gb.button_a = e.key.type == SDL_KEYDOWN ? 1 : 0;
@@ -1254,10 +1276,6 @@ int main(int argc, char **argv)
         if (gb_render(&gb, renderer)) {
             //gb_render_logo(renderer, width, height);
 
-            //SDL_Rect dst = {.x = WIDTH*SCALE + 10, .y = 0, .w = surface->w, .h = surface->h};
-            //SDL_RenderCopy(renderer, texture, NULL, &dst);
-            (void)texture;
-
             if (show_tile_grid) {
                 SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
                 for (int i = 0; i <= 32; i++) {
@@ -1279,22 +1297,6 @@ int main(int argc, char **argv)
 
             SDL_RenderPresent(renderer);
         }
-    }
-#endif
-    exit(0);
-
-    while (true) {
-        printf("%04X: ", gb.PC);
-        Inst inst = gb_fetch_inst(&gb);
-        printf("raw: %02X", inst.data[0]);
-        for (size_t i = 1; i < inst.size; i++) {
-            printf(" %02X", inst.data[i]);
-        }
-        printf("\n");
-        gb_exec(&gb, inst);
-        gb_dump(&gb);
-
-        //getchar();
     }
 
     return 0;
@@ -1331,3 +1333,64 @@ uint8_t *read_entire_file(const char *path, size_t *size)
     }
     return file_data;
 }
+
+bool get_command(GameBoy *gb)
+{
+    for (size_t i = 0; i < bp_count; i++) {
+        if (bp[i] == gb->PC) {
+            step_debug = true;
+            printf("Hit Breakpoint at: %04X\n", gb->PC);
+        }
+    }
+
+    if (!step_debug) return true;
+
+    char buf[256];
+    char *cmd = buf;
+    fgets(cmd, sizeof(buf), stdin);
+
+    if (strncmp(cmd, "q", 1) == 0 || strncmp(cmd, "quit", 4) == 0) {
+        printf("Quitting...\n");
+        exit(0);
+    } else if (strncmp(cmd, "s", 1) == 0 || strncmp(cmd, "step", 4) == 0) {
+        return true;
+    } else if (strncmp(cmd, "c", 1) == 0 || strncmp(cmd, "continue", 8) == 0) {
+        step_debug = false;
+        return true;
+    } else if (strncmp(cmd, "d", 1) == 0 || strncmp(cmd, "dump", 4) == 0) {
+        gb_dump(gb);
+    } else if (strncmp(cmd, "b", 1) == 0 || strncmp(cmd, "break", 5) == 0) {
+        while (*cmd != ' ') cmd += 1;
+        cmd += 1;
+
+        unsigned long addr;
+        if (cmd[0] == '0' && cmd[1] == 'x') {
+            // Parse hex
+            addr = strtoul(cmd + 2, NULL, 16);
+        } else if (cmd[0] >= '0' && cmd[0] <= '9') {
+            addr = strtoul(cmd, NULL, 10);
+        } else {
+            assert(0 && "TODO: Invalid break address");
+        }
+
+        printf("Setting breakpoint at 0x%04lX\n", addr);
+
+        bp[bp_count] = addr;
+        bp_count += 1;
+    } else if (strncmp(cmd, "x", 1) == 0) {
+        assert(cmd[1] == '/');
+        char *end;
+        unsigned long n = strtoul(cmd + 2, &end, 10);
+        unsigned long addr = strtoul(end, NULL, 16);
+        assert(n > 0);
+        assert(addr <= 0xFFFF);
+        printf("%04lX: ", addr);
+        for (size_t i = 0; i < n && addr + i <= 0xFFFF; i++) {
+            printf("%02X ", gb->memory[addr + i]);
+        }
+        printf("\n");
+    }
+
+    return false;
+}
+
