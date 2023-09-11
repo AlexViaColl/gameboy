@@ -459,6 +459,7 @@ Inst gb_fetch_inst(GameBoy *gb)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
+    printf("%04X:  ", gb->PC);
     uint8_t b = inst.data[0];
     // 1-byte instructions
     if (inst.size == 1) {
@@ -555,13 +556,17 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b >= 0x80 && b <= 0x87) {
             Reg8 reg = b & 0x7;
             printf("ADD A,%s\n", gb_reg_to_str(reg));
-            gb_set_reg(gb, REG_A, gb_get_reg(gb, reg) + gb_get_reg(gb, REG_A));
-            // TODO: Flags
+            uint8_t res = gb_get_reg(gb, reg) + gb_get_reg(gb, REG_A);
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0); // TODO
+            gb_set_flag(gb, Flag_C, (res < gb_get_reg(gb, REG_A)) ? 1 : 0);
             gb->PC += inst.size;
         } else if (b >= 0x88 && b <= 0x8F) {
             Reg8 reg = b & 0x7;
             printf("ADC A,%s\n", gb_reg_to_str(reg));
-            int res = gb_get_flag(gb, Flag_C) + gb_get_reg(gb, REG_A) +
+            uint8_t res = gb_get_flag(gb, Flag_C) + gb_get_reg(gb, REG_A) +
                 gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -642,13 +647,13 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t low = gb->memory[gb->SP+0];
             uint8_t high = gb->memory[gb->SP+1];
             uint16_t addr = (high << 8) | low;
-            printf("RET %s (address: 0x%04X)\n", gb_flag_to_str(f), addr);
+            printf("RET %s (address: 0x%04X)", gb_flag_to_str(f), addr);
             if (gb_get_flag(gb, f)) {
-                printf("Taken\n");
+                printf("  Taken\n");
                 gb->SP += 2;
                 gb->PC = addr;
             } else {
-                printf("NOT Taken\n");
+                printf("  NOT Taken\n");
                 gb->PC += inst.size;
             }
         } else if (b == 0xC9) {
@@ -883,12 +888,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
             Flag f = (b >> 3) & 0x3;
-            printf("JP %s,0x%04X\n", gb_flag_to_str(f), n);
+            printf("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                printf("Jump Taken!\n");
+                printf("  Taken\n");
                 gb->PC = n;
             } else {
-                printf("Jump NOT Taken\n");
+                printf("  NOT Taken\n");
                 gb->PC += inst.size;
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
@@ -1315,6 +1320,11 @@ bool get_command(GameBoy *gb)
         exit(0);
     } else if (strncmp(cmd, "s", 1) == 0 || strncmp(cmd, "step", 4) == 0) {
         return true;
+    } else if (strncmp(cmd, "n", 1) == 0 || strncmp(cmd, "next", 4) == 0) {
+        Inst inst = gb_fetch_inst(gb);
+        bp[bp_count++] = gb->PC + inst.size;
+        step_debug = false;
+        return true;
     } else if (strncmp(cmd, "c", 1) == 0 || strncmp(cmd, "continue", 8) == 0) {
         step_debug = false;
         return true;
@@ -1339,17 +1349,31 @@ bool get_command(GameBoy *gb)
         bp[bp_count] = addr;
         bp_count += 1;
     } else if (strncmp(cmd, "x", 1) == 0) {
+        // x/nfu addr
+        // x/5 addr
+        // x/5i addr
         assert(cmd[1] == '/');
         char *end;
         unsigned long n = strtoul(cmd + 2, &end, 10);
+        char f = *end;
+        while (!isdigit(*end)) {
+            end++;
+        }
+
         unsigned long addr = strtoul(end, NULL, 16);
         assert(n > 0);
         assert(addr <= 0xFFFF);
-        printf("%04lX: ", addr);
-        for (size_t i = 0; i < n && addr + i <= 0xFFFF; i++) {
-            printf("%02X ", gb->memory[addr + i]);
+        if (f == 'i') {
+            printf("NOT IMPLEMENTED\n");
+            printf("%04lX: ", addr);
+            printf("\n");
+        } else {
+            printf("%04lX: ", addr);
+            for (size_t i = 0; i < n && addr + i <= 0xFFFF; i++) {
+                printf("%02X ", gb->memory[addr + i]);
+            }
+            printf("\n");
         }
-        printf("\n");
     }
 
     return false;
