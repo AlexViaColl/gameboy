@@ -1,5 +1,5 @@
-#include <assert.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,35 +66,6 @@ typedef struct RomHeader {
     uint8_t logo[48];
     char title[16];
 } RomHeader;
-
-typedef enum Reg8 {
-    REG_B = 0,
-    REG_C = 1,
-    REG_D = 2,
-    REG_E = 3,
-    REG_H = 4,
-    REG_L = 5,
-    REG_HL_MEM = 6,
-    REG_A = 7,
-    REG_COUNT,
-} Reg8;
-
-typedef enum Reg16 {
-    REG_BC = 0,
-    REG_DE = 1,
-    REG_HL = 2,
-    REG_SP = 3,
-} Reg16;
-
-typedef enum Flag {
-    Flag_NZ = 0,
-    Flag_Z  = 1,
-    Flag_NC = 2,
-    Flag_C  = 3,
-    Flag_N  = 4,
-    Flag_H  = 5,
-    //FLAG_COUNT,
-} Flag;
 
 uint8_t *read_entire_file(const char *path, size_t *size);
 bool get_command(GameBoy *gb);
@@ -199,7 +170,7 @@ const char* gb_flag_to_str(Flag f)
     }
 }
 
-void gb_set_reg(GameBoy *gb, uint8_t reg, uint8_t value)
+void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value)
 {
     // reg (0-7): B, C, D, E, H, L, (HL), A
     switch (reg) {
@@ -239,7 +210,7 @@ void gb_set_reg(GameBoy *gb, uint8_t reg, uint8_t value)
     }
 }
 
-uint8_t gb_get_reg(GameBoy *gb, uint8_t reg)
+uint8_t gb_get_reg(GameBoy *gb, Reg8 reg)
 {
     // reg (0-7): B, C, D, E, H, L, (HL), A
     switch (reg) {
@@ -318,6 +289,8 @@ Inst gb_fetch_inst(GameBoy *gb)
         b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
         b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
     ) {
+        return (Inst){.data = data, .size = 1};
+    } else if (b == 0x07) {
         return (Inst){.data = data, .size = 1};
     } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
         return (Inst){.data = data, .size = 1};
@@ -399,82 +372,114 @@ Inst gb_fetch_inst(GameBoy *gb)
     assert(0 && "Not implemented");
 }
 
+#define gb_log_inst(...) gb_log_inst_internal(gb, __VA_ARGS__)
+void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
+{
+    if (gb->printf == NULL) return;
+
+    va_list args;
+    va_start(args, fmt);
+    char buf[256];
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    gb->printf("%s", buf);
+}
+
 void gb_exec(GameBoy *gb, Inst inst)
 {
-    printf("%04X:  ", gb->PC);
     uint8_t b = inst.data[0];
     // 1-byte instructions
     if (inst.size == 1) {
         if (b == 0x00) {
-            printf("NOP\n");
+            gb_log_inst("NOP\n");
             gb->PC += inst.size;
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 src = (b >> 4) & 0x3;
-            printf("ADD HL,%s\n", gb_reg16_to_str(src));
-            int res = gb_get_reg16(gb, REG_HL) + gb_get_reg16(gb, src);
+            gb_log_inst("ADD HL,%s\n", gb_reg16_to_str(src));
+            uint16_t hl_prev = gb_get_reg16(gb, REG_HL);
+            uint16_t res = hl_prev + gb_get_reg16(gb, src);
             gb_set_reg16(gb, REG_HL, res);
-            // TODO: flags
+            gb_set_flag(gb, Flag_N, 0);
+            //gb_set_flag(gb, Flag_H, ???); // TODO
+            gb_set_flag(gb, Flag_C, res < hl_prev ? 1 : 0);
             gb->PC += inst.size;
         } else if ( // INC reg
             b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
             b == 0x0C || b == 0x1C || b == 0x2C || b == 0x3C
         ) {
             Reg8 reg = (b >> 3) & 0x7;
-            printf("INC %s\n", gb_reg_to_str(reg));
-            gb_set_reg(gb, reg, gb_get_reg(gb, reg) + 1);
+            gb_log_inst("INC %s\n", gb_reg_to_str(reg));
+            uint8_t prev = gb_get_reg(gb, reg);
+            uint8_t res = prev + 1;
+            gb_set_reg(gb, reg, res);
+            gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, (res & 0xF) < (prev & 0xF) ? 1 : 0);
             gb->PC += inst.size;
         } else if ( // DEC reg
             b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
             b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
         ) {
             Reg8 reg = (b >> 3) & 0x7;
-            printf("%04X: DEC %s\n", gb->PC, gb_reg_to_str(reg));
-            int res = gb_get_reg(gb, reg) - 1;
+            gb_log_inst("%04X: DEC %s\n", gb->PC, gb_reg_to_str(reg));
+            uint8_t prev = gb_get_reg(gb, reg);
+            int res = prev - 1;
             gb_set_reg(gb, reg, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             gb_set_flag(gb, Flag_N, 1);
-            //gb_set_flag(gb, Flag_H, ???);
+            gb_set_flag(gb, Flag_H, (res & 0xF) < (prev & 0xF) ? 1 : 0);
+            gb->PC += inst.size;
+        } else if (b == 0x07) {
+            gb_log_inst("RLCA\n");
+            uint8_t prev = gb_get_reg(gb, REG_A);
+            uint8_t res = (prev << 1) | (prev >> 7);
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flag(gb, Flag_Z, 0);
+            gb_set_flag(gb, Flag_N, 0);
+            gb_set_flag(gb, Flag_H, 0);
+            gb_set_flag(gb, Flag_C, prev >> 7);
             gb->PC += inst.size;
         } else if (b == 0x0A || b == 0x1A) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("LD A,(%s)\n", gb_reg16_to_str(reg));
+            gb_log_inst("LD A,(%s)\n", gb_reg16_to_str(reg));
             uint8_t value = gb->memory[gb_get_reg16(gb, reg)];
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0x02 || b == 0x12) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("LD (%s),A\n", gb_reg16_to_str(reg));
+            gb_log_inst("LD (%s),A\n", gb_reg16_to_str(reg));
             gb->memory[gb_get_reg16(gb, reg)] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
         } else if (b == 0x22 || b == 0x32) {
-            printf("LD (HL%c),A\n", b == 0x22 ? '+' : '-');
+            gb_log_inst("LD (HL%c),A\n", b == 0x22 ? '+' : '-');
             gb->memory[gb->HL] = gb_get_reg(gb, REG_A);
             if (b == 0x22) gb->HL += 1;
             else gb->HL -= 1;
             gb->PC += inst.size;
         } else if (b == 0x0A || b == 0x1A) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("LD A,(%s)\n", gb_reg16_to_str(reg));
+            gb_log_inst("LD A,(%s)\n", gb_reg16_to_str(reg));
             gb_set_reg(gb, REG_A, gb->memory[gb_get_reg16(gb, reg)]);
             gb->PC += inst.size;
         } else if (b == 0x2A || b == 0x3A) {
-            printf("LD A,(HL%c)\n", b == 0x22 ? '+' : '-');
+            gb_log_inst("LD A,(HL%c)\n", b == 0x22 ? '+' : '-');
             gb_set_reg(gb, REG_A, gb->memory[gb->HL]);
             if (b == 0x22) gb->HL += 1;
             else gb->HL -= 1;
             gb->PC += inst.size;
         } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
             Reg16 reg = (b >> 4) & 0x3;
-            printf("INC %s\n", gb_reg16_to_str(reg));
+            gb_log_inst("INC %s\n", gb_reg16_to_str(reg));
             gb_set_reg16(gb, reg, gb_get_reg16(gb, reg) + 1);
             gb->PC += inst.size;
         } else if (b == 0x0B || b == 0x1B || b == 0x2B || b == 0x3B) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("DEC %s\n", gb_reg16_to_str(reg));
+            gb_log_inst("DEC %s\n", gb_reg16_to_str(reg));
             gb_set_reg16(gb, reg, gb_get_reg16(gb, reg) - 1);
             gb->PC += inst.size;
         } else if (b == 0x0F) {
-            printf("RRCA\n");
+            gb_log_inst("RRCA\n");
             uint8_t a = gb_get_reg(gb, REG_A);
             uint8_t c = a & 1;
             uint8_t res = (a >> 1) | (c << 7);
@@ -486,18 +491,18 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0x40 && b <= 0x7F) {
             if (b == 0x76) {
-                printf("HALT\n");
+                gb_log_inst("HALT\n");
                 return;
             }
             Reg8 src = b & 0x7;
             Reg8 dst = (b >> 3) & 0x7;
-            printf("LD %s,%s\n", gb_reg_to_str(dst), gb_reg_to_str(src));
+            gb_log_inst("LD %s,%s\n", gb_reg_to_str(dst), gb_reg_to_str(src));
             uint8_t value = gb_get_reg(gb, src);
             gb_set_reg(gb, dst, value);
             gb->PC += inst.size;
         } else if (b >= 0x80 && b <= 0x87) {
             Reg8 reg = b & 0x7;
-            printf("ADD A,%s\n", gb_reg_to_str(reg));
+            gb_log_inst("ADD A,%s\n", gb_reg_to_str(reg));
             uint8_t a = gb_get_reg(gb, REG_A);
             uint8_t res = gb_get_reg(gb, reg) + a;
             gb_set_reg(gb, REG_A, res);
@@ -508,7 +513,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0x88 && b <= 0x8F) {
             Reg8 reg = b & 0x7;
-            printf("ADC A,%s\n", gb_reg_to_str(reg));
+            gb_log_inst("ADC A,%s\n", gb_reg_to_str(reg));
             uint8_t res = gb_get_flag(gb, Flag_C) + gb_get_reg(gb, REG_A) +
                 gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
@@ -517,7 +522,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0x90 && b <= 0x97) {
             Reg8 reg = b & 0x7;
-            printf("SUB A,%s\n", gb_reg_to_str(reg));
+            gb_log_inst("SUB A,%s\n", gb_reg_to_str(reg));
             int res = gb_get_reg(gb, REG_A) - gb_get_reg(gb, reg);
             uint8_t c = gb_get_reg(gb, REG_A) >= gb_get_reg(gb, reg) ? 0 : 1;
             gb_set_reg(gb, REG_A, res);
@@ -528,7 +533,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0x98 && b <= 0x9F) {
             Reg8 reg = b & 0x7;
-            printf("SBC A,%s\n", gb_reg_to_str(reg));
+            gb_log_inst("SBC A,%s\n", gb_reg_to_str(reg));
             exit(1);
             int res = gb_get_flag(gb, Flag_C) + gb_get_reg(gb, REG_A) +
                 gb_get_reg(gb, reg);
@@ -538,7 +543,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0xB0 && b <= 0xB7) {
             Reg8 reg = b & 0x7;
-            printf("OR %s\n", gb_reg_to_str(reg));
+            gb_log_inst("OR %s\n", gb_reg_to_str(reg));
             uint8_t res = gb_get_reg(gb, REG_A) | gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -548,7 +553,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0xB8 && b <= 0xBF) {
             Reg8 reg = b & 0x7;
-            printf("CP %s\n", gb_reg_to_str(reg));
+            gb_log_inst("CP %s\n", gb_reg_to_str(reg));
             int a = (int)gb_get_reg(gb, REG_A);
             int n = (int)gb_get_reg(gb, reg);
             int res = a - n;
@@ -559,7 +564,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0xA0 && b <= 0xA7) {
             Reg8 reg = b & 0x7;
-            printf("AND %s\n", gb_reg_to_str(reg));
+            gb_log_inst("AND %s\n", gb_reg_to_str(reg));
             uint8_t res = gb_get_reg(gb, REG_A) & gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -569,7 +574,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b >= 0xA8 && b <= 0xAF) {
             Reg8 reg = b & 0x7;
-            printf("XOR %s\n", gb_reg_to_str(reg));
+            gb_log_inst("XOR %s\n", gb_reg_to_str(reg));
             uint8_t res = gb_get_reg(gb, REG_A) ^ gb_get_reg(gb, reg);
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -578,15 +583,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (b == 0xE2) {
-            printf("LD (C),A -- LD(0xFF00+%02X),%02X\n", gb_get_reg(gb, REG_C), gb_get_reg(gb, REG_A));
+            gb_log_inst("LD (C),A -- LD(0xFF00+%02X),%02X\n", gb_get_reg(gb, REG_C), gb_get_reg(gb, REG_A));
             gb->memory[0xFF00 + gb_get_reg(gb, REG_C)] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
         } else if (b == 0xF2) {
-            printf("LD A,(C)\n");
+            gb_log_inst("LD A,(C)\n");
             gb_set_reg(gb, REG_A, gb->memory[0xFF00 + gb_get_reg(gb, REG_C)]);
             gb->PC += inst.size;
         } else if (b == 0xF3 || b == 0xFB) {
-            printf(b == 0xF3 ? "DI\n" : "EI\n");
+            gb_log_inst(b == 0xF3 ? "DI\n" : "EI\n");
             gb->IME = b == 0xF3 ? 0 : 1;
             gb->PC += inst.size;
         } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
@@ -594,7 +599,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t low = gb->memory[gb->SP+0];
             uint8_t high = gb->memory[gb->SP+1];
             uint16_t addr = (high << 8) | low;
-            printf("RET %s (address: 0x%04X)", gb_flag_to_str(f), addr);
+            gb_log_inst("RET %s (address: 0x%04X)", gb_flag_to_str(f), addr);
             if (gb_get_flag(gb, f)) {
                 printf("  Taken\n");
                 gb->SP += 2;
@@ -608,11 +613,11 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t high = gb->memory[gb->SP+1];
             gb->SP += 2;
             uint16_t addr = (high << 8) | low;
-            printf("RET (address: 0x%04X)\n", addr);
+            gb_log_inst("RET (address: 0x%04X)\n", addr);
             gb->PC = addr;
         } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("POP %s\n", gb_reg16_to_str(reg));
+            gb_log_inst("POP %s\n", gb_reg16_to_str(reg));
             uint8_t low = gb->memory[gb->SP+0];
             uint8_t high = gb->memory[gb->SP+1];
             gb_set_reg16(gb, reg, (high << 8) | low);
@@ -620,7 +625,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) {
             Reg16 reg = (b >> 4) & 0x3;
-            printf("PUSH %s\n", gb_reg16_to_str(reg));
+            gb_log_inst("PUSH %s\n", gb_reg16_to_str(reg));
             uint16_t value = gb_get_reg16(gb, reg);
             gb->SP -= 2;
             gb->memory[gb->SP+0] = (value & 0xff);
@@ -629,43 +634,43 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (((b & 0xC0) == 0xC0) && ((b & 0x7) == 0x7)) { // RST
             assert(b != 0xC3);
             uint8_t n = ((b >> 3) & 0x7)*8;
-            printf("RST %02XH\n", n);
+            gb_log_inst("RST %02XH\n", n);
             gb->SP -= 2;
             gb->memory[gb->SP+0] = (gb->PC & 0xff);
             gb->memory[gb->SP+1] = (gb->PC >> 8);
             gb->PC = n;
         } else if (b == 0xE9) {
-            printf("JP (HL)\n");
+            gb_log_inst("JP (HL)\n");
             gb->PC = gb->memory[gb->HL];
         } else {
-            printf("%02X\n", inst.data[0]);
+            gb_log_inst("%02X\n", inst.data[0]);
             assert(0 && "Instruction not implemented");
         }
     }
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
         if (b == 0x06) {
-            printf("LD B,0x%02X\n", inst.data[1]);
+            gb_log_inst("LD B,0x%02X\n", inst.data[1]);
             gb_set_reg(gb, REG_B, inst.data[1]);
             gb->PC += inst.size;
         } else if (b == 0x10) {
-            printf("STOP\n");
+            gb_log_inst("STOP\n");
             exit(1);
         } else if (b == 0x18) {
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-            printf("JR %d\n", r8);
+            gb_log_inst("JR %d\n", r8);
             gb->PC = (gb->PC + inst.size) + r8;
         } else if ( // LD reg,d8
             b == 0x06 || b == 0x16 || b == 0x26 || b == 0x36 ||
             b == 0x0E || b == 0x1E || b == 0x2E || b == 0x3E
         ) {
             Reg8 reg = (b >> 3) & 0x7;
-            printf("LD %s,0x%02X\n", gb_reg_to_str(reg), inst.data[1]);
+            gb_log_inst("LD %s,0x%02X\n", gb_reg_to_str(reg), inst.data[1]);
             gb_set_reg(gb, reg, inst.data[1]);
             gb->PC += inst.size;
         } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
             Flag f = (b >> 3) & 0x3;
-            printf("JR %s,0x%02X\n", gb_flag_to_str(f), inst.data[1]);
+            gb_log_inst("JR %s,0x%02X\n", gb_flag_to_str(f), inst.data[1]);
             if (gb_get_flag(gb, f)) {
                 printf("Jump taken\n");
                 int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
@@ -676,7 +681,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->PC += inst.size;
             }
         } else if (b == 0x20) {
-            printf("JR NZ,0x%02X\n", inst.data[1]);
+            gb_log_inst("JR NZ,0x%02X\n", inst.data[1]);
             if (!gb_get_zero_flag(gb)) {
                 printf("Jump taken\n");
                 int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
@@ -687,13 +692,13 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->PC += inst.size;
             }
         } else if (b == 0x2F) {
-            printf("CPL\n");
+            gb_log_inst("CPL\n");
             gb_set_reg(gb, REG_A, ~gb_get_reg(gb, REG_A));
             gb_set_flag(gb, Flag_N, 1);
             gb_set_flag(gb, Flag_H, 1);
             gb->PC += inst.size;
         } else if (b == 0xE0) {
-            printf("LDH (FF00+%02X),A\n", inst.data[1]);
+            gb_log_inst("LDH (FF00+%02X),A\n", inst.data[1]);
             uint8_t value = gb_get_reg(gb, REG_A);
             gb->memory[0xFF00 + inst.data[1]] = value;
             if (inst.data[1] == 0) {
@@ -737,7 +742,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             }
             gb->PC += inst.size;
         } else if (b == 0xC6) {
-            printf("ADD A, 0x%02X\n", inst.data[1]);
+            gb_log_inst("ADD A, 0x%02X\n", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) + inst.data[1];
             uint8_t c = res < gb_get_reg(gb, REG_A) ? 1 : 0;
             gb_set_reg(gb, REG_A, res);
@@ -747,7 +752,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, c);
             gb->PC += inst.size;
         } else if (b == 0xD6) {
-            printf("SUB A, 0x%02X\n", inst.data[1]);
+            gb_log_inst("SUB A, 0x%02X\n", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) - inst.data[1];
             uint8_t c = gb_get_reg(gb, REG_A) < inst.data[1] ? 1 : 0;
             gb_set_reg(gb, REG_A, res);
@@ -757,7 +762,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, c);
             gb->PC += inst.size;
         } else if (b == 0xE6) {
-            printf("AND A, 0x%02X\n", inst.data[1]);
+            gb_log_inst("AND A, 0x%02X\n", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) & inst.data[1];
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -766,15 +771,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (b == 0xE8) {
-            printf("ADD SP,0x%02X\n", inst.data[1]);
+            gb_log_inst("ADD SP,0x%02X\n", inst.data[1]);
             gb->SP += (int)inst.data[1];
             gb->PC += inst.size;
         } else if (b == 0xF0) {
-            printf("LDH A,(FF00+%02X)\n", inst.data[1]);
+            gb_log_inst("LDH A,(FF00+%02X)\n", inst.data[1]);
             gb_set_reg(gb, REG_A, gb->memory[0xFF00 + inst.data[1]]);
             gb->PC += inst.size;
         } else if (b == 0xF6) {
-            printf("OR A, 0x%02X\n", inst.data[1]);
+            gb_log_inst("OR A, 0x%02X\n", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) | inst.data[1];
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
@@ -783,7 +788,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (b == 0xFE) {
-            printf("CP 0x%02X\n", inst.data[1]);
+            gb_log_inst("CP 0x%02X\n", inst.data[1]);
             int a = (int)gb_get_reg(gb, REG_A);
             int n = (int)inst.data[1];
             int res = a - n;
@@ -800,13 +805,13 @@ void gb_exec(GameBoy *gb, Inst inst)
     else if (inst.size == 2 && inst.data[0] == 0xCB) {
         if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
             Reg8 reg = inst.data[1] & 0x7;
-            printf("SWAP %s\n", gb_reg_to_str(reg));
+            gb_log_inst("SWAP %s\n", gb_reg_to_str(reg));
             uint8_t value = gb_get_reg(gb, reg);
             gb_set_reg(gb, reg, ((value & 0xF) << 4) | ((value & 0xF0) >> 4));
             gb->PC += inst.size;
         } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3F) {
             Reg8 reg = inst.data[1] & 0x7;
-            printf("SRL %s\n", gb_reg_to_str(reg));
+            gb_log_inst("SRL %s\n", gb_reg_to_str(reg));
             uint8_t value = gb_get_reg(gb, reg);
             uint8_t res = value >> 1;
             gb_set_reg(gb, reg, res);
@@ -818,7 +823,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xBF) {
             uint8_t b = (inst.data[1] >> 3) & 0x7;
             Reg8 reg = inst.data[1] & 0x7;
-            printf("RES %d,%s\n", b, gb_reg_to_str(reg));
+            gb_log_inst("RES %d,%s\n", b, gb_reg_to_str(reg));
             uint8_t value = gb_get_reg(gb, reg) & ~(1 << b);
             gb_set_reg(gb, reg, value);
             gb->PC += inst.size;
@@ -832,21 +837,21 @@ void gb_exec(GameBoy *gb, Inst inst)
     else if (inst.size == 3) {
         uint16_t n = inst.data[1] | (inst.data[2] << 8);
         if (b == 0xC3) {
-            printf("JP 0x%04X\n", n);
+            gb_log_inst("JP 0x%04X\n", n);
             gb->PC = n;
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
             Reg16 reg = b >> 4;
-            printf("LD %s, 0x%04X\n", gb_reg16_to_str(reg), n);
+            gb_log_inst("LD %s, 0x%04X\n", gb_reg16_to_str(reg), n);
             gb_set_reg16(gb, reg, n);
             gb->PC += inst.size;
         } else if (b == 0x08) {
-            printf("LD (0x%04X),SP\n", n);
+            gb_log_inst("LD (0x%04X),SP\n", n);
             gb->memory[n+0] = (gb->SP & 0xff);
             gb->memory[n+1] = (gb->SP >> 8);
             gb->PC += inst.size;
         } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
             Flag f = (b >> 3) & 0x3;
-            printf("JP %s,0x%04X", gb_flag_to_str(f), n);
+            gb_log_inst("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
                 printf("  Taken\n");
                 gb->PC = n;
@@ -856,7 +861,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
             Flag f = (b >> 3) & 0x3;
-            printf("CALL %s,0x%04X\n", gb_flag_to_str(f), n);
+            gb_log_inst("CALL %s,0x%04X\n", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
                 gb->SP -= 2;
                 uint16_t ret_addr = gb->PC + inst.size;
@@ -867,18 +872,18 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->PC += inst.size;
             }
         } else if (b == 0xCD) {
-            printf("CALL 0x%04X\n", n);
+            gb_log_inst("CALL 0x%04X\n", n);
             gb->SP -= 2;
             uint16_t ret_addr = gb->PC + inst.size;
             gb->memory[gb->SP+0] = (ret_addr & 0xff);
             gb->memory[gb->SP+1] = (ret_addr >> 8);
             gb->PC = n;
         } else if (b == 0xEA) {
-            printf("LD (0x%04X),A\n", n);
+            gb_log_inst("LD (0x%04X),A\n", n);
             gb->memory[n] = gb_get_reg(gb, REG_A);
             gb->PC += inst.size;
         } else if (b == 0xFA) {
-            printf("LD A,(0x%04X)\n", n);
+            gb_log_inst("LD A,(0x%04X)\n", n);
             gb_set_reg(gb, REG_A, gb->memory[n]);
             gb->PC += inst.size;
         } else {
@@ -935,6 +940,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
 
         if (get_command(gb)) {
             Inst inst = gb_fetch_inst(gb);
+            printf("%04X:  ", gb->PC);
             gb_exec(gb, inst);
         }
     //}

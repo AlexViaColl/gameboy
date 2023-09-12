@@ -1,6 +1,7 @@
 #ifndef GB_H
 #define GB_H
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -50,6 +51,8 @@ typedef struct GameBoy {
     double elapsed_ms;  // Milliseconds elapsed since the start
     double timer_sec;   // Timer for counting seconds
     double timer_clock;
+
+    int (*printf)(const char *fmt, ...);
 } GameBoy;
 
 typedef struct Inst {
@@ -57,11 +60,49 @@ typedef struct Inst {
     size_t size;
 } Inst;
 
+typedef enum Reg8 {
+    REG_B = 0,
+    REG_C = 1,
+    REG_D = 2,
+    REG_E = 3,
+    REG_H = 4,
+    REG_L = 5,
+    REG_HL_MEM = 6,
+    REG_A = 7,
+    REG_COUNT,
+} Reg8;
+
+typedef enum Reg16 {
+    REG_BC = 0,
+    REG_DE = 1,
+    REG_HL = 2,
+    REG_SP = 3,
+} Reg16;
+
+typedef enum Flag {
+    Flag_NZ = 0,
+    Flag_Z  = 1,
+    Flag_NC = 2,
+    Flag_C  = 3,
+    Flag_N  = 4,
+    Flag_H  = 5,
+    //FLAG_COUNT,
+} Flag;
+
+
 void gb_load_rom_file(GameBoy *gb, const char *path);
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);
 Inst gb_fetch_inst(GameBoy *gb);
 void gb_exec(GameBoy *gb, Inst inst);
 void gb_tick(GameBoy *gb, double dt_ms);
 void gb_dump(GameBoy *gb);
+
+uint8_t gb_get_flag(GameBoy *gb, Flag flag);
+void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);
+
+uint8_t gb_get_reg(GameBoy *gb, Reg8 reg);
+uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg);
+void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value);
+void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value);
 
 #endif // GB_H

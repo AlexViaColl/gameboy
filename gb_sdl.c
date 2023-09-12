@@ -10,7 +10,6 @@
 
 #define SCALE  5
 
-#define MAX_TILE_IDS (128*3)
 #define TILEMAP_ROWS 32
 #define TILEMAP_COLS 32
 #define VIEWPORT_COLS 20
@@ -220,7 +219,6 @@ void gb_render_logo(SDL_Renderer *renderer, int width, int height)
         }
     }
 }
-
 
 int main(int argc, char **argv)
 {
