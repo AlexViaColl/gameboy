@@ -395,8 +395,6 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 1};
     } else if (b == 0xAF) {
         return (Inst){.data = data, .size = 1};
-    } else if (b == 0xE2) {
-        return (Inst){.data = data, .size = 1};
     } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
         return (Inst){.data = data, .size = 1};
     } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) {
@@ -406,6 +404,10 @@ Inst gb_fetch_inst(GameBoy *gb)
     } else if (((b & 0xC0) == 0xC0) && ((b & 0x7) == 0x7)) { // RST
         return (Inst){.data = data, .size = 1};
     } else if (b == 0xC9) {
+        return (Inst){.data = data, .size = 1};
+    } else if (b == 0xE2 || b == 0xF2) {
+        return (Inst){.data = data, .size = 1};
+    } else if (b == 0xE9) {
         return (Inst){.data = data, .size = 1};
     }
 
@@ -506,7 +508,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0x22 || b == 0x32) {
             printf("LD (HL%c),A\n", b == 0x22 ? '+' : '-');
-            gb->memory[gb_get_reg16(gb, REG_HL)] = gb_get_reg(gb, REG_A);
+            gb->memory[gb->HL] = gb_get_reg(gb, REG_A);
             if (b == 0x22) gb->HL += 1;
             else gb->HL -= 1;
             gb->PC += inst.size;
@@ -556,12 +558,13 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b >= 0x80 && b <= 0x87) {
             Reg8 reg = b & 0x7;
             printf("ADD A,%s\n", gb_reg_to_str(reg));
-            uint8_t res = gb_get_reg(gb, reg) + gb_get_reg(gb, REG_A);
+            uint8_t a = gb_get_reg(gb, REG_A);
+            uint8_t res = gb_get_reg(gb, reg) + a;
             gb_set_reg(gb, REG_A, res);
             gb_set_flag(gb, Flag_Z, res == 0 ? 1 : 0);
             gb_set_flag(gb, Flag_N, 0);
             gb_set_flag(gb, Flag_H, 0); // TODO
-            gb_set_flag(gb, Flag_C, (res < gb_get_reg(gb, REG_A)) ? 1 : 0);
+            gb_set_flag(gb, Flag_C, (res < a) ? 1 : 0);
             gb->PC += inst.size;
         } else if (b >= 0x88 && b <= 0x8F) {
             Reg8 reg = b & 0x7;
@@ -635,8 +638,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_C, 0);
             gb->PC += inst.size;
         } else if (b == 0xE2) {
-            printf("LD (C),A\n");
-            gb->memory[gb_get_reg(gb, REG_C)] = gb_get_reg(gb, REG_A);
+            printf("LD (C),A -- LD(0xFF00+%02X),%02X\n", gb_get_reg(gb, REG_C), gb_get_reg(gb, REG_A));
+            gb->memory[0xFF00 + gb_get_reg(gb, REG_C)] = gb_get_reg(gb, REG_A);
+            gb->PC += inst.size;
+        } else if (b == 0xF2) {
+            printf("LD A,(C)\n");
+            gb_set_reg(gb, REG_A, gb->memory[0xFF00 + gb_get_reg(gb, REG_C)]);
             gb->PC += inst.size;
         } else if (b == 0xF3 || b == 0xFB) {
             printf(b == 0xF3 ? "DI\n" : "EI\n");
@@ -681,12 +688,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (((b & 0xC0) == 0xC0) && ((b & 0x7) == 0x7)) { // RST
             assert(b != 0xC3);
-            uint8_t n = (b >> 3) & 0x7;
+            uint8_t n = ((b >> 3) & 0x7)*8;
             printf("RST %02XH\n", n);
             gb->SP -= 2;
             gb->memory[gb->SP+0] = (gb->PC & 0xff);
             gb->memory[gb->SP+1] = (gb->PC >> 8);
             gb->PC = n;
+        } else if (b == 0xE9) {
+            printf("JP (HL)\n");
+            gb->PC = gb->memory[gb->HL];
         } else {
             printf("%02X\n", inst.data[0]);
             assert(0 && "Instruction not implemented");
@@ -865,7 +875,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flag(gb, Flag_H, 0);
             gb_set_flag(gb, Flag_C, value & 0x1);
             gb->PC += inst.size;
+        } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xBF) {
+            uint8_t b = (inst.data[1] >> 3) & 0x7;
+            Reg8 reg = inst.data[1] & 0x7;
+            printf("RES %d,%s\n", b, gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg) & ~(1 << b);
+            gb_set_reg(gb, reg, value);
+            gb->PC += inst.size;
         } else {
+            printf("%02X %02X\n", inst.data[0], inst.data[1]);
             assert(0 && "Instruction not implemented");
         }
     }
@@ -982,7 +1000,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
     //}
 
     // HACK: increase the LY register without taking VSync/HSync into consideration!!!
-    gb->memory[rLY] += 74;
+    gb->memory[rLY] += 1;
 }
 
 void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset, bool transparency)
@@ -1153,9 +1171,14 @@ int main(int argc, char **argv)
 
     bool show_tile_grid = false;
 
-    //step_debug = true;
+    step_debug = true;
     GameBoy gb = {0};
     gb_load_rom_file(&gb, argv[1]);
+
+    //uint8_t buf[] = {0xEA, 0x94, 0xFF};
+    //Inst inst = {.data = buf, .size = 3};
+    //gb_exec(&gb, inst);
+    //exit(1);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
@@ -1231,7 +1254,7 @@ int main(int argc, char **argv)
         }
 
         // Update
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 20; i++) {
             gb_tick(&gb, dt_ms);
         }
 

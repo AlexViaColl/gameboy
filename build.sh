@@ -3,6 +3,6 @@
 set -xe
 
 CFLAGS="-Wall -Wextra -Werror -pedantic -ggdb `pkg-config --cflags sdl2`"
-LIBS="`pkg-config --libs sdl2 SDL2_ttf`"
+LIBS="`pkg-config --libs sdl2`"
 
 cc $CFLAGS -O3 -o gb $LIBS gb.c
