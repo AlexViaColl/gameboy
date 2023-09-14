@@ -105,4 +105,7 @@ uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg);
 void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value);
 void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value);
 
+const char* gb_reg_to_str(Reg8 r);
+const char* gb_reg16_to_str(Reg16 r);
+
 #endif // GB_H
