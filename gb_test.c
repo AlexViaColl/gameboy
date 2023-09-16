@@ -976,6 +976,21 @@ void test_inst_cp_reg8(Reg8 reg)
     assert(gb_get_flag(&gb, Flag_N) == 1);
 }
 
+void test_inst_jp_mem_hl(void)
+{
+    printf("%s\n", __func__);
+    GameBoy gb = {0};
+    uint8_t data[] = {0xE9};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    uint16_t addr = 0x1234;
+    gb_write_memory(&gb, gb.HL+0, addr & 0xff);
+    gb_write_memory(&gb, gb.HL+1, addr >> 8);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == addr);
+}
+
 int main(void)
 {
     //test_NOP();
@@ -1124,6 +1139,8 @@ int main(void)
         test_inst_cp_reg8(src);
     }
     printf("\n");
+
+    test_inst_jp_mem_hl();
 
     return 0;
 }

@@ -133,6 +133,9 @@ void gb_exec(GameBoy *gb, Inst inst);
 void gb_tick(GameBoy *gb, double dt_ms);
 void gb_dump(GameBoy *gb);
 
+uint8_t gb_read_memory(GameBoy *gb, uint16_t addr);
+void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value);
+
 uint8_t gb_get_flag(GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);
 
