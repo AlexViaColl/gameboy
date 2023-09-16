@@ -231,6 +231,7 @@ int main(int argc, char **argv)
 
     step_debug = true;
     GameBoy gb = {0};
+    gb.printf = printf;
     gb_load_rom_file(&gb, argv[1]);
 
     //uint8_t buf[] = {0xEA, 0x94, 0xFF};

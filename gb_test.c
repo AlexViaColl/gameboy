@@ -654,6 +654,7 @@ void test_inst_dec_reg16(Reg16 reg)
 
 void test_inst_ld_reg8_reg8(Reg8 dst, Reg8 src)
 {
+    if (dst == REG_HL_MEM && src == REG_HL_MEM) return;
     printf("%s(%s <- %s)\n", __func__, gb_reg_to_str(dst), gb_reg_to_str(src));
     uint16_t start_pc = 0x0032;
     uint8_t value = 0x69;
@@ -688,7 +689,7 @@ void test_inst_add_reg8(Reg8 reg)
     printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
     uint16_t start_pc = 0x0032;
     uint8_t a = 0x19;
-    uint16_t value = 0xC3;
+    uint8_t value = 0xC3;
     GameBoy gb = {0};
     uint8_t data[] = {0x80};
     data[0] |= reg;
@@ -770,7 +771,7 @@ void test_inst_adc_reg8(Reg8 reg)
     printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
     uint8_t c = 1;
     uint8_t a = 0x19;
-    uint16_t value = 0xC3;
+    uint8_t value = 0xC3;
     GameBoy gb = {0};
     uint8_t data[] = {0x88};
     data[0] |= reg;
@@ -787,6 +788,164 @@ void test_inst_adc_reg8(Reg8 reg)
         assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a + value + c));
     }
     assert(gb_get_flag(&gb, Flag_N) == 0);
+}
+
+void test_inst_sub_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint16_t start_pc = 0x0032;
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0x90};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+    if (reg == REG_A) {
+        assert(gb_get_reg(&gb, REG_A) == 0);
+    } else {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a - value));
+    }
+    assert(gb_get_flag(&gb, Flag_N) == 1);
+}
+
+void test_inst_sbc_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint16_t start_pc = 0x0032;
+    uint8_t c = 1;
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0x98};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+    gb_set_flag(&gb, Flag_C, c);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+    if (reg == REG_A) {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)-1);
+    } else {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a - value - c));
+    }
+    assert(gb_get_flag(&gb, Flag_N) == 1);
+}
+
+void test_inst_and_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint16_t start_pc = 0x0032;
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0xA0};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+    if (reg == REG_A) {
+        assert(gb_get_reg(&gb, REG_A) == a);
+    } else {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a & value));
+    }
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 1);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+}
+
+void test_inst_xor_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint16_t start_pc = 0x0032;
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0xA8};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+    if (reg == REG_A) {
+        assert(gb_get_reg(&gb, REG_A) == 0);
+    } else {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a ^ value));
+    }
+    assert(gb_get_flag(&gb, Flag_Z) == (reg == REG_A) ? 1 : 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+}
+
+void test_inst_or_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint16_t start_pc = 0x0032;
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0xB0};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+    if (reg == REG_A) {
+        assert(gb_get_reg(&gb, REG_A) == a);
+    } else {
+        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a | value));
+    }
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+}
+
+void test_inst_cp_reg8(Reg8 reg)
+{
+    printf("%s(%s)\n", __func__, gb_reg_to_str(reg));
+    uint8_t a = 0xDD;
+    uint8_t value = 0xC3;
+    GameBoy gb = {0};
+    uint8_t data[] = {0xB8};
+    data[0] |= reg;
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_set_reg(&gb, reg, value);
+    gb_set_reg(&gb, REG_A, a);
+
+    gb_exec(&gb, inst);
+
+    if (reg == REG_A) {
+        assert(gb_get_flag(&gb, Flag_Z) == 1);
+    } else {
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+    }
+    assert(gb_get_flag(&gb, Flag_N) == 1);
 }
 
 int main(void)
@@ -888,7 +1047,6 @@ int main(void)
 
     for (int dst = 0; dst < REG_COUNT; dst++) {
         for (int src = 0; src < REG_COUNT; src++) {
-            if (dst == REG_HL_MEM && src == REG_HL_MEM) continue;
             test_inst_ld_reg8_reg8(dst, src);
         }
     }
@@ -907,6 +1065,37 @@ int main(void)
     for (int src = 0; src < REG_COUNT; src++) {
         test_inst_adc_reg8(src);
     }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_sub_reg8(src);
+    }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_sbc_reg8(src);
+    }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_and_reg8(src);
+    }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_xor_reg8(src);
+    }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_or_reg8(src);
+    }
+    printf("\n");
+
+    for (int src = 0; src < REG_COUNT; src++) {
+        test_inst_cp_reg8(src);
+    }
+    printf("\n");
 
     return 0;
 }
