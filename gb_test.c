@@ -298,6 +298,12 @@ void test_inst_rlca(void)
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 0);
+
+    test_inst_rot(&gb, 0x0F, 0x00);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
 }
 
 void test_inst_rrca(void)
@@ -307,6 +313,12 @@ void test_inst_rrca(void)
     test_inst_rot(&gb, 0x0F, 0x81);
     assert(gb_get_reg(&gb, REG_A) == 0xC0);
     assert(gb_get_flag(&gb, Flag_C) == 1);
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
+
+    test_inst_rot(&gb, 0x0F, 0x00);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -322,6 +334,12 @@ void test_inst_rla(void)
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 0);
+
+    test_inst_rot(&gb, 0x0F, 0x00);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
 }
 
 void test_inst_rra(void)
@@ -331,6 +349,12 @@ void test_inst_rra(void)
     test_inst_rot(&gb, 0x1F, 0x81);
     assert(gb_get_reg(&gb, REG_A) == 0x40);
     assert(gb_get_flag(&gb, Flag_C) == 1);
+    assert(gb_get_flag(&gb, Flag_Z) == 0);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
+
+    test_inst_rot(&gb, 0x0F, 0x00);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -611,6 +635,10 @@ void test_inst_add_hl_reg16(Reg16 reg)
     uint16_t start_pc = 0x0032;
     uint16_t hl = 0x9A34;
     uint16_t value = 0xDE78;
+    //  0x9A34
+    // +0xDE78
+    // -------
+    //  0x78AC
     GameBoy gb = {0};
     uint8_t data[] = {0x09};
     data[0] |= (reg << 4);
@@ -627,7 +655,7 @@ void test_inst_add_hl_reg16(Reg16 reg)
     } else {
         assert(gb_get_reg16(&gb, REG_HL) == (uint16_t)(hl + value));
     }
-    // 0 H C
+    // -0HC
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 0); // Sould this be set??
     assert(gb_get_flag(&gb, Flag_C) == 1);

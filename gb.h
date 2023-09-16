@@ -2,11 +2,43 @@
 #define GB_H
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define WIDTH  160 // 20 tiles
 #define HEIGHT 144 // 18 tiles
+
+#define TILE_SIZE 16
+#define MAX_TILE_IDS (128*3)
+#define TILEMAP_ROWS 32
+#define TILEMAP_COLS 32
+#define VIEWPORT_COLS 20
+#define VIEWPORT_ROWS 18
+#define TILE_PIXELS 8
+#define OAM_COUNT 40
+
+#define VRAM_TILES      0x8000
+//#define VRAM_TILES      0x9000
+#define VRAM_TILEMAP    0x9800
+
+#define rP1     0xFF00
+#define rLCDC   0xFF40
+#define rLY     0xFF44
+#define rBGP    0xFF47
+#define rWY     0xFF4A
+#define rWX     0xFF4B
+
+#define LCDCF_ON        0x80
+#define LCDCF_WIN9C00   0x40
+#define LCDCF_WINON     0x20
+#define LCDCF_BG8000    0x10
+#define LCDCF_OBJON     0x02
+#define LCDCF_BGON      0x01
+
+#define P1F_GET_BTN  0x10
+#define P1F_GET_DPAD 0x20
+#define P1F_GET_NONE (P1F_GET_BTN | P1F_GET_DPAD)
 
 typedef struct GameBoy {
     // CPU freq:        4.194304 MHz    (~4194304 cycles/s)
@@ -53,6 +85,10 @@ typedef struct GameBoy {
     double timer_clock;
 
     int (*printf)(const char *fmt, ...);
+
+    bool running;
+    bool paused;
+    bool step_debug;
 } GameBoy;
 
 typedef struct Inst {
