@@ -169,22 +169,27 @@ void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, in
 
 bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
 {
-    if ((gb->memory[rLCDC] & LCDCF_ON  /*0x80*/) == 0) return false;
-    if ((gb->memory[rLCDC] & LCDCF_BGON/*0x01*/) == 0) return false;
+    uint8_t lcdc = gb->memory[rLCDC];
+    if ((lcdc & LCDCF_ON  /*0x80*/) == 0) return false;
+    if ((lcdc & LCDCF_BGON/*0x01*/) == 0) return false;
 
     // Render the BG
-    bool bg8000_mode = (gb->memory[rLCDC] & LCDCF_BG8000/*0x10*/);
-    uint16_t bg_win_tile_data_offset = bg8000_mode ? 0x8000 : 0x9000;
+    uint16_t bg_tm_off = (lcdc & LCDCF_BG9800) == LCDCF_BG9800 ? _SCRN0 : _SCRN1;
+    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
+        _VRAM8000 : _VRAM9000;
 
     int yoffset = 0;
     int xoffset = 0;
-    for (int row = 0; row < TILEMAP_ROWS/*VIEWPORT_ROWS*/; row++) {
-        for (int col = 0; col < TILEMAP_COLS/*VIEWPORT_COLS*/; col++) {
-            int tile_idx = bg8000_mode ?
-                gb->memory[VRAM_TILEMAP + row*(TILEMAP_COLS) + col] :
-                (int8_t)gb->memory[VRAM_TILEMAP + row*(TILEMAP_COLS) + col];
+    //int scx = gb->memory[rSCX];
+    //printf("SCX: %d\n", scx);
+    for (int row = 0; row < SCRN_VY_B/*SCRN_Y_B*/; row++) {
+        for (int col = 0; col < SCRN_VX_B/*SCRN_X_B*/; col++) {
+            int tile_idx = gb->memory[bg_tm_off + row*32 + col];
+            //int tile_idx = bg8000_mode ?
+            //    gb->memory[bg_tm_off + row*(TILEMAP_COLS) + col] :
+            //    (int8_t)gb->memory[bg_tm_off + row*(TILEMAP_COLS) + col];
 
-            const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
+            const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
             gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
             xoffset += TILE_PIXELS*SCALE;
         }
@@ -203,7 +208,7 @@ bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
         for (int row = 0; row < VIEWPORT_ROWS; row++) {
             for (int col = 0; col < VIEWPORT_COLS; col++) {
                 int tile_idx = gb->memory[win_tile_data_offset + row*(TILEMAP_COLS) + col];
-                const uint8_t *tile = gb->memory + bg_win_tile_data_offset + tile_idx*TILE_SIZE;
+                const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
                 gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
                 xoffset += TILE_PIXELS*SCALE;
             }

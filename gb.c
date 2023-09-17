@@ -9,10 +9,6 @@
 
 #define SCALE  5
 
-#define CPU_FREQ    4194304.0 // 4.19 MHz
-#define VSYNC       59.73
-#define HSYNC       9198.0    // 9.198 KHz
-
 #define CLOCK_MS    (1000.0 / CPU_FREQ)
 #define VSYNC_MS    (1000.0 / VSYNC)
 #define HSYNC_MS    (1000.0 / HSYNC)
@@ -50,6 +46,17 @@ void gb_dump(GameBoy *gb)
         (flags & 0x20) ? 'H' : '-',
         (flags & 0x10) ? 'C' : '-',
         gb->BC, gb->DE, gb->HL, gb->SP);
+}
+
+void gb_trigger_interrupt(GameBoy *gb)
+{
+    gb->memory[rIF/*$FF0F*/] |= (1 << 2);
+    // TODO: This is probably not right
+    gb->SP -= 2;
+    uint16_t ret_addr = gb->PC;
+    gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
+    gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+    gb->PC = 0x0050;
 }
 
 uint8_t gb_read_memory(GameBoy *gb, uint16_t addr)
@@ -96,11 +103,80 @@ void gb_write_joypad_input(GameBoy *gb, uint8_t value)
     }
 }
 
+void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
+{
+    switch (addr) {
+        case rDIV:
+            printf("write timer: [rDIV %04X] = %02X\n", addr, value);
+            gb->memory[rDIV] = 0; // Reset
+            break;
+        case rTIMA:
+            printf("write timer: [rTIMA %04X] = %02X\n", addr, value);
+            //assert(0);
+            break;
+        case rTMA: {
+            // 00 -> Interrupt every 256 increments of TAC
+            // 01 -> Interrupt every 255 increments of TAC
+            // ...
+            // BF -> Interrupt every ? increments of TAC
+            // ...
+            // FE -> Interrupt every 2 increments of TAC
+            // FF -> Interrupt every increment of TAC
+            int modulo = 0x100 - value;
+            printf("write timer: [rTMA %04X] = %02X\n", addr, value);
+            printf("Interrupt every %d increments of TAC\n", modulo);
+            gb->memory[rTMA] = value;
+        } break;
+        case rTAC:
+            if (value & 0x04) {
+                int clock_select;
+                switch (value & 0x03) {
+                    case 0:
+                        clock_select = 1024;
+                        break;
+                    case 1:
+                        clock_select = 16;
+                        break;
+                    case 2:
+                        clock_select = 64;
+                        break;
+                    case 3:
+                        clock_select = 256;
+                        break;
+                }
+                printf("write timer: [rTAC %04X] = %02X\n", addr, value);
+                printf("Enabling Timer at CPU Clock / %d = %d Hz\n",
+                    clock_select, (int)(CPU_FREQ / clock_select));
+                //assert(0);
+            }
+            gb->memory[rTAC] = value;
+            break;
+        default: assert(0 && "Unreachable");
+    }
+}
+
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
     gb->memory[addr] = value;
     if (addr == 0xFF00) {
         gb_write_joypad_input(gb, value);
+    }
+    return;
+
+    if (addr == 0xFF00) {
+        gb->memory[addr] = value;
+        gb_write_joypad_input(gb, value);
+    } else if (addr >= 0xFF04 && addr <= 0xFF07) {
+        gb_write_timer(gb, addr, value);
+    } else if (addr == 0xFF46) {
+        assert(0);
+    } else if (addr == rIE/*0xFFFF*/) {
+        // Bit 0: VBlank   Interrupt Enable  (INT $40)  (1=Enable)
+        // Bit 1: LCD STAT Interrupt Enable  (INT $48)  (1=Enable)
+    } else if (addr == rIF/*0xFF0F*/) {
+        // Bit 0: VBlank   Interrupt Request (INT $40)  (1=Request)
+    } else {
+        gb->memory[addr] = value;
     }
 }
 
@@ -311,6 +387,8 @@ Inst gb_fetch_inst(GameBoy *gb)
     // 1-byte instructions
     if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
         return (Inst){.data = data, .size = 1};
+    } else if (b == 0x10) {
+        return (Inst){.data = data, .size = 1};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
         return (Inst){.data = data, .size = 1};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
@@ -336,6 +414,8 @@ Inst gb_fetch_inst(GameBoy *gb)
     } else if (b == 0x22 || b == 0x32 || b == 0x2A || b == 0x3A) {
         return (Inst){.data = data, .size = 1};
     } else if (b == 0x0F || b == 0x1F) {
+        return (Inst){.data = data, .size = 1};
+    } else if (b == 0x2F) {
         return (Inst){.data = data, .size = 1};
     } else if (b >= 0x40 && b <= 0x7F) {
         return (Inst){.data = data, .size = 1};
@@ -379,7 +459,7 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 2};
     } else if (b == 0xF8) {
         return (Inst){.data = data, .size = 2};
-    } else if (b == 0xDE || b == 0xFE) {
+    } else if (b == 0xCE || b == 0xDE || b == 0xEE || b == 0xFE) {
         return (Inst){.data = data, .size = 2};
     }
 
@@ -437,12 +517,32 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
+    if (gb->IME) {
+        if (gb->ime_cycles == 1) {
+            gb->ime_cycles -= 1;
+        } else if (gb->ime_cycles == 0 && gb->memory[rLY] == 0) {
+            // Handle interrupt
+            gb->SP -= 2;
+            uint16_t ret_addr = gb->PC;
+            gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
+            gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+            gb->PC = 0x0040; // VBlank
+
+            gb->IME = 0;
+            return;
+        }
+    }
+
     uint8_t b = inst.data[0];
     // 1-byte instructions
     if (inst.size == 1) {
         if (b == 0x00) {
             gb_log_inst("NOP");
             gb->PC += inst.size;
+        } else if (b == 0x10) {
+            gb_log_inst("STOP");
+            gb_write_timer(gb, rDIV, 0);
+            //assert(0);
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 src = (b >> 4) & 0x3;
             gb_log_inst("ADD HL,%s", gb_reg16_to_str(src));
@@ -662,6 +762,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0xF3 || b == 0xFB) {
             gb_log_inst(b == 0xF3 ? "DI" : "EI");
             gb->IME = b == 0xF3 ? 0 : 1;
+            if (gb->IME) gb->ime_cycles = 1;
             gb->PC += inst.size;
         } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
             Flag f = (b >> 3) & 0x3;
@@ -730,10 +831,7 @@ void gb_exec(GameBoy *gb, Inst inst)
     }
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
-        if (b == 0x10) {
-            gb_log_inst("STOP");
-            exit(1);
-        } else if (b == 0x18) {
+        if (b == 0x18) {
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
             gb_log_inst("JR %d", r8);
             gb->PC = (gb->PC + inst.size) + r8;
@@ -770,6 +868,14 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0xC6) {
             gb_log_inst("ADD A,0x%02X", inst.data[1]);
             uint8_t res = gb_get_reg(gb, REG_A) + inst.data[1];
+            uint8_t c = res < gb_get_reg(gb, REG_A) ? 1 : 0;
+            gb_set_reg(gb, REG_A, res);
+            uint8_t h = 0; // TODO
+            gb_set_flags(gb, res == 0, 0, h, c);
+            gb->PC += inst.size;
+        } else if (b == 0xCE) {
+            gb_log_inst("ADC A,0x%02X", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) + inst.data[1] + gb_get_flag(gb, Flag_C);
             uint8_t c = res < gb_get_reg(gb, REG_A) ? 1 : 0;
             gb_set_reg(gb, REG_A, res);
             uint8_t h = 0; // TODO
@@ -824,6 +930,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t c = 0; // TODO
             gb_set_flags(gb, 0, 0, h, c);
             gb->PC += inst.size;
+        } else if (b == 0xEE) {
+            gb_log_inst("XOR 0x%02X", inst.data[1]);
+            uint8_t res = gb_get_reg(gb, REG_A) ^ inst.data[1];
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flags(gb, res == 0, 0, 0, 0);
+            gb->PC += inst.size;
         } else if (b == 0xFE) {
             gb_log_inst("CP 0x%02X", inst.data[1]);
             int a = (int)gb_get_reg(gb, REG_A);
@@ -833,6 +945,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flags(gb, res == 0, 1, h, a < n);
             gb->PC += inst.size;
         } else {
+            printf("%02X\n", b);
             assert(0 && "Instruction not implemented");
         }
     }
@@ -995,6 +1108,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     // Should we set SP = $FFFE as specified in GBCPUman.pdf ???
 
     gb->timer_sec = 1000.0;
+    gb->timer_div = (1000.0 / 16384.0);
 }
 
 void gb_load_rom_file(GameBoy *gb, const char *path)
@@ -1010,6 +1124,8 @@ void gb_tick(GameBoy *gb, double dt_ms)
 {
     gb->elapsed_ms += dt_ms;
     gb->timer_sec -= dt_ms;
+    gb->timer_div -= dt_ms;
+    gb->timer_tima -= dt_ms;
     //if (gb->timer_sec <= 0.0) {
         gb->timer_sec += 1000.0;
 
@@ -1019,8 +1135,48 @@ void gb_tick(GameBoy *gb, double dt_ms)
         }
     //}
 
+    // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
+    if (gb->timer_div <= 0) {
+        gb->memory[rDIV] += 1;
+        gb->timer_div += 1000.0 / 16384;
+    }
+
+    // Timer Enabled in TAC
+    if (gb->memory[rTAC] & 0x04) {
+        // Update TIMA (timer counter)
+        int freq;
+        switch (gb->memory[rTAC] & 0x03) {
+            case 0:
+                freq = 4096;
+                break;
+            case 1:
+                freq = 262144;
+                break;
+            case 2:
+                freq = 65536;
+                break;
+            case 3:
+                freq = 16384;
+                break;
+        }
+        if (gb->timer_tima <= 0) {
+            gb->memory[rTIMA] += 1;
+            gb->timer_tima += 1000.0 / freq; 
+            printf("Increasing TIMA %02X -> %02X\n", (uint8_t)(gb->memory[rTIMA] - 1), gb->memory[rTIMA]);
+            if (gb->memory[rTIMA] == 0) {
+                printf("Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
+                gb->memory[rTIMA] = gb->memory[rTMA];
+                // TODO: Trigger interrupt
+                gb_trigger_interrupt(gb);
+            }
+        }
+    }
+
     // HACK: increase the LY register without taking VSync/HSync into consideration!!!
     gb->memory[rLY] += 1;
+    if (gb->memory[rLY] == 0) {
+        // VBlank interrupt maybe?
+    }
 }
 
 uint8_t *read_entire_file(const char *path, size_t *size)
