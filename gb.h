@@ -166,9 +166,12 @@ typedef enum Flag {
 
 void gb_load_rom_file(GameBoy *gb, const char *path);
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);
+void gb_tick(GameBoy *gb, double dt_ms);
+
 Inst gb_fetch_inst(GameBoy *gb);
 void gb_exec(GameBoy *gb, Inst inst);
-void gb_tick(GameBoy *gb, double dt_ms);
+void gb_render(GameBoy *gb);
+
 void gb_dump(GameBoy *gb);
 
 uint8_t gb_read_memory(GameBoy *gb, uint16_t addr);

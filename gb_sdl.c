@@ -9,11 +9,88 @@
 
 #define SCALE  5
 
-// Tile: 8x8 pixels, 2 bpp (index into Palette)
-const uint8_t PALETTE[4] = {0x00, 0x40, 0x80, 0xFF};
-//const uint8_t PALETTE[4] = {0xff, 0x80, 0x40, 0x00};
+// RRGGBBAA
+#define HEX_TO_COLOR(x) (x >> 24)&0xff, (x >> 16)&0xff, (x >> 8)&0xff, (x)&0xff
+#define BLACK   0x000000FF
+#define WHITE   0xFFFFFFFF
+#define RED     0xFF0000FF
+#define GREEN   0x00FF00FF
+#define BLUE    0x0000FFFF
 
-bool gb_render(GameBoy *gb, SDL_Renderer *renderer);
+#define BG          0x131313FF
+#define DBG_GRID    0x00C400FF
+#define DBG_VIEW    0xFFFF14FF
+
+static SDL_Window *window;
+static bool show_tile_grid = false;
+
+static void render_debug_tile_grid(SDL_Renderer *renderer, int pixel_dim, int xstart, int ystart)
+{
+    if (show_tile_grid) {
+        SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(DBG_GRID));
+        for (int i = 0; i <= 32; i++) {
+            int y = ystart+i*TILE_PIXELS*pixel_dim;
+            SDL_RenderDrawLine(renderer,
+                xstart+0, y,
+                xstart+32*TILE_PIXELS*pixel_dim, y);
+        }
+        for (int i = 0; i <= 32; i++) {
+            int x = xstart+i*TILE_PIXELS*pixel_dim;
+            SDL_RenderDrawLine(renderer,
+                x, ystart+0,
+                x, ystart+32*TILE_PIXELS*pixel_dim);
+        }
+    }
+}
+
+static void render_debug_viewport(SDL_Renderer *renderer, int pixel_dim, int xstart, int ystart)
+{
+    SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(DBG_VIEW));
+    int thickness = 5;
+    SDL_Rect r = {
+        xstart+0, ystart+HEIGHT*pixel_dim,
+        WIDTH*pixel_dim+thickness, thickness};
+    SDL_RenderFillRect(renderer, &r);
+    r = (SDL_Rect){
+        xstart+WIDTH*pixel_dim, ystart+0,
+        thickness, HEIGHT*pixel_dim};
+    SDL_RenderFillRect(renderer, &r);
+}
+
+void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
+{
+    if (gb->memory[rLCDC] == 0) return;
+
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+
+    SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
+    SDL_RenderClear(renderer);
+
+    int min_dim = h < w ? h : w;
+    int pixel_dim = min_dim / 256; // GameBoy pixel size
+
+    int xstart = (w - (256*pixel_dim))/2;
+    int ystart = (h - (256*pixel_dim))/2;
+
+    for (int row = 0; row < 256; row++) {
+        for (int col = 0; col < 256; col++) {
+            uint8_t color = gb->display[row*256 + col];
+            //SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(RED));
+            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+            SDL_Rect r = {
+                xstart+col*pixel_dim, ystart+row*pixel_dim,
+                pixel_dim, pixel_dim};
+            SDL_RenderFillRect(renderer, &r);
+        }
+    }
+
+    // Debug rendering
+    render_debug_tile_grid(renderer, pixel_dim, xstart, ystart);
+    render_debug_viewport(renderer, pixel_dim, xstart, ystart);
+
+    SDL_RenderPresent(renderer);
+}
 
 int main(int argc, char **argv)
 {
@@ -21,8 +98,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Usage: %s <path to ROM>\n", argv[0]);
         exit(1);
     }
-
-    bool show_tile_grid = false;
 
     GameBoy gb = {0};
     gb.running = true;
@@ -36,7 +111,7 @@ int main(int argc, char **argv)
 
     int width = SCALE*WIDTH;
     int height = SCALE*HEIGHT;
-    SDL_Window *window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, 0);
+    window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, SDL_WINDOW_RESIZABLE);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
         exit(1);
@@ -60,11 +135,17 @@ int main(int argc, char **argv)
         //printf("dt: %f ms\n", dt_ms);
 
         // Input
-        SDL_PollEvent(&e);
-        if (e.type == SDL_QUIT) {
-            gb.running = false;
-        } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
-            switch (e.key.keysym.sym) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                gb.running = false;
+            } else if (e.type == SDL_WINDOWEVENT) {
+                if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    if (e.window.data1 < 256 || e.window.data2 < 256) {
+                        SDL_SetWindowSize(window, 256, 256);
+                    }
+                }
+            } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                switch (e.key.keysym.sym) {
                 case SDLK_ESCAPE:
                     gb.running = false;
                     break;
@@ -102,135 +183,18 @@ int main(int argc, char **argv)
                     break;
                 default:
                     break;
+                }
             }
         }
 
         // Update
-        for (int i = 0; i < 20; i++) {
+        //for (int i = 0; i < 20; i++) {
             gb_tick(&gb, dt_ms);
-        }
+        //}
 
         // Render
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-
-        if (gb_render(&gb, renderer)) {
-            if (show_tile_grid) {
-                SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
-                for (int i = 0; i <= 32; i++) {
-                    int y = i*TILE_PIXELS*SCALE;
-                    SDL_RenderDrawLine(renderer, 0, y, 32*TILE_PIXELS*SCALE, y);
-                }
-                for (int i = 0; i <= 32; i++) {
-                    int x = i*TILE_PIXELS*SCALE;
-                    SDL_RenderDrawLine(renderer, x, 0, x, 32*TILE_PIXELS*SCALE);
-                }
-            }
-
-            SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-            int thickness = 5;
-            SDL_Rect r = {0, HEIGHT*SCALE, WIDTH*SCALE, thickness};
-            SDL_RenderFillRect(renderer, &r);
-            r = (SDL_Rect){WIDTH*SCALE, 0, thickness, HEIGHT*SCALE};
-            SDL_RenderFillRect(renderer, &r);
-
-            SDL_RenderPresent(renderer);
-        }
+        sdl_render(&gb, renderer);
     }
 
     return 0;
 }
-
-void gb_render_tile(GameBoy *gb, SDL_Renderer *renderer, const uint8_t *tile, int xoffset, int yoffset, bool transparency)
-{
-    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
-    uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
-
-    for (int tile_row = 0; tile_row < TILE_PIXELS; tile_row++) {
-        uint8_t low_bitplane = tile[tile_row*2+0];
-        uint8_t high_bitplane = tile[tile_row*2+1];
-        for (int tile_col = 0; tile_col < TILE_PIXELS; tile_col++) {
-            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
-            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
-            low_bitplane <<= 1;
-            high_bitplane <<= 1;
-
-            uint8_t color_idx = (bit1 << 1) | bit0;
-            uint8_t color = PALETTE[bgp_tbl[color_idx]];
-
-            if (!transparency || color_idx != 0) {
-                SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-                SDL_Rect rect = {.x = xoffset + tile_col*SCALE, .y = yoffset + tile_row*SCALE, .w = SCALE, .h = SCALE};
-                SDL_RenderFillRect(renderer, &rect);
-            }
-        }
-    }
-}
-
-bool gb_render(GameBoy *gb, SDL_Renderer *renderer)
-{
-    uint8_t lcdc = gb->memory[rLCDC];
-    if ((lcdc & LCDCF_ON  /*0x80*/) == 0) return false;
-    if ((lcdc & LCDCF_BGON/*0x01*/) == 0) return false;
-
-    // Render the BG
-    uint16_t bg_tm_off = (lcdc & LCDCF_BG9800) == LCDCF_BG9800 ? _SCRN0 : _SCRN1;
-    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
-        _VRAM8000 : _VRAM9000;
-
-    int yoffset = 0;
-    int xoffset = 0;
-    //int scx = gb->memory[rSCX];
-    //printf("SCX: %d\n", scx);
-    for (int row = 0; row < SCRN_VY_B/*SCRN_Y_B*/; row++) {
-        for (int col = 0; col < SCRN_VX_B/*SCRN_X_B*/; col++) {
-            int tile_idx = gb->memory[bg_tm_off + row*32 + col];
-            //int tile_idx = bg8000_mode ?
-            //    gb->memory[bg_tm_off + row*(TILEMAP_COLS) + col] :
-            //    (int8_t)gb->memory[bg_tm_off + row*(TILEMAP_COLS) + col];
-
-            const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
-            gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
-            xoffset += TILE_PIXELS*SCALE;
-        }
-        yoffset += TILE_PIXELS*SCALE;
-        xoffset = 0;
-    }
-
-    // Render Window
-    if ((gb->memory[rLCDC] & LCDCF_WINON/*0x20*/) != 0) {
-        uint16_t win_tile_data_offset = (gb->memory[rLCDC] & LCDCF_WIN9C00/*0x40*/) ? 0x9C00 : 0x9800;
-        int win_x = gb->memory[rWX] - 7;
-        int win_y = gb->memory[rWY];
-        yoffset = win_y*SCALE;
-        xoffset = win_x*SCALE;
-
-        for (int row = 0; row < VIEWPORT_ROWS; row++) {
-            for (int col = 0; col < VIEWPORT_COLS; col++) {
-                int tile_idx = gb->memory[win_tile_data_offset + row*(TILEMAP_COLS) + col];
-                const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
-                gb_render_tile(gb, renderer, tile, xoffset, yoffset, false);
-                xoffset += TILE_PIXELS*SCALE;
-            }
-            yoffset += TILE_PIXELS*SCALE;
-            xoffset = win_x*SCALE;
-        }
-    }
-
-    // Render OBJ
-    if ((gb->memory[rLCDC] & LCDCF_OBJON/*0x02*/) != 0) {
-        for (int i = 0; i < OAM_COUNT; i++) {
-            uint8_t *obj = gb->memory + 0xFE00 + i*4;
-            int y = *(obj+0) - 16;
-            int x = *(obj+1) - 8;
-            int tile_id = *(obj+2);
-            const uint8_t *tile = gb->memory + 0x8000 + tile_id*TILE_SIZE;
-            gb_render_tile(gb, renderer, tile, x*SCALE, y*SCALE, true);
-            //printf("OBJ[%2d] x: %d, y: %d, tileID: %d, attributes: 0x%02X\n",
-            //    i, x, y, tileID, *(obj+3));
-        }
-    }
-
-    return true;
-}
-

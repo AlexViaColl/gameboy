@@ -149,6 +149,10 @@ void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
 
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
+    if (addr == rLCDC && value != 0) {
+        printf("[rLCDC] = %02X\n", value);
+        //assert(0);
+    }
     gb->memory[addr] = value;
     if (addr == 0xFF00) {
         gb_write_joypad_input(gb, value);
@@ -1073,6 +1077,119 @@ void gb_exec(GameBoy *gb, Inst inst)
     assert(gb->PC <= 0xFFFF);
 }
 
+static size_t gb_tile_coord_to_pixel(int row, int col)
+{
+    assert(row >= 0 && row < 32);
+    assert(col >= 0 && col < 32);
+    int row_pixel = row*TILE_PIXELS; // (0, 8, 16, ..., 248)
+    int col_pixel = col*TILE_PIXELS; // (0, 8, 16, ..., 248)
+    return row_pixel*SCRN_VX + col_pixel;
+}
+
+static void gb_render_tile(GameBoy *gb, int row, int col, int tile_idx)
+{
+    assert(row >= 0 && row < 32);
+    assert(col >= 0 && col < 32);
+    static const uint8_t PALETTE[4] = {0x00, 0x40, 0x80, 0xFF};
+    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
+    uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
+
+    uint8_t lcdc = gb->memory[rLCDC];
+    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
+        _VRAM8000 : _VRAM9000;
+
+    const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
+    size_t tile_off = gb_tile_coord_to_pixel(row, col);
+    for (int tile_row = 0; tile_row < TILE_PIXELS; tile_row++) {
+        uint8_t low_bitplane = tile[tile_row*2+0];
+        uint8_t high_bitplane = tile[tile_row*2+1];
+        for (int tile_col = 0; tile_col < TILE_PIXELS; tile_col++) {
+            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
+            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
+            low_bitplane <<= 1;
+            high_bitplane <<= 1;
+
+            uint8_t color_idx = (bit1 << 1) | bit0;
+            uint8_t color = PALETTE[bgp_tbl[color_idx]];
+
+            gb->display[tile_off + tile_row*TILE_PIXELS + tile_col] = color;
+        }
+    }
+}
+
+static void fill_solid_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t color)
+{
+    assert(tile_x >= 0 && tile_x < 32);
+    assert(tile_y >= 0 && tile_y < 32);
+    size_t tile_row = tile_y*8;
+    size_t tile_col = tile_x*8;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            gb->display[(row+tile_row)*256 + (col+tile_col)] = color;
+        }
+    }
+}
+
+// Render Heart tile at 0,0
+//uint8_t tile[] = {
+//    0x00, 0x00, 0x6C, 0x6C, 0xFE, 0xFA, 0xFE, 0xFE,
+//    0xFE, 0xFE, 0x7C, 0x7C, 0x38, 0x38, 0x10, 0x10,
+//};
+//fill_tile(gb, 0, 0, tile);
+static void fill_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t *tile)
+{
+    // tile is 16 bytes
+    assert(tile_x >= 0 && tile_x < 32);
+    assert(tile_y >= 0 && tile_y < 32);
+    static const uint8_t PALETTE[4] = {0x40, 0xFF, 0x80, 0x00};
+    size_t tile_row = tile_y*8;
+    size_t tile_col = tile_x*8;
+    for (int row = 0; row < 8; row++) {
+        // 64 pixels, but only 16 bytes (2 bytes per row)
+        uint8_t low_bitplane = tile[row*2+0];
+        uint8_t high_bitplane = tile[row*2+1];
+        for (int col = 0; col < 8; col++) {
+            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
+            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
+            low_bitplane <<= 1;
+            high_bitplane <<= 1;
+            uint8_t color_idx = (bit1 << 1) | bit0; // 0-3
+            uint8_t color = PALETTE[color_idx];
+            gb->display[(row+tile_row)*256 + (col+tile_col)] = color;
+        }
+    }
+}
+
+void gb_render(GameBoy *gb)
+{
+    uint8_t lcdc = gb->memory[rLCDC];
+    //if (lcdc != 0) assert(0);
+    //if ((lcdc & LCDCF_OFF) == LCDCF_OFF) return;
+
+    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
+        _VRAM8000 : _VRAM9000;
+    (void)bg_win_td_off;
+
+    // Render the Background
+    if ((lcdc & LCDCF_BGON) == LCDCF_BGON) {
+        uint16_t bg_tm_off = (lcdc & LCDCF_BG9800) == LCDCF_BG9800 ? _SCRN0 : _SCRN1;
+
+        for (int row = 0; row < SCRN_VY_B; row++) {
+            for (int col = 0; col < SCRN_VX_B; col++) {
+                int tile_idx = gb->memory[bg_tm_off + row*32 + col];
+                //fill_solid_tile(gb, col, row, 0xff);
+                uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
+                fill_tile(gb, col, row, tile);
+                //gb_render_tile(gb, row, col, tile_idx);
+            }
+        }
+    }
+
+    // Render the Window
+
+    // Render the Sprites (OBJ)
+}
+
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
     printf("Size: %lx\n", size);
@@ -1126,6 +1243,9 @@ void gb_tick(GameBoy *gb, double dt_ms)
             gb_exec(gb, inst);
         }
     //}
+
+    // Copy tiles to display
+    gb_render(gb);
 
     // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
     if (gb->timer_div <= 0) {
