@@ -1,5 +1,6 @@
 roms/
-roms-build
+roms-build/
+tmp/
 
 gb
 test
