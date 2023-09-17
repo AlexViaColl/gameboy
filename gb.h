@@ -32,10 +32,6 @@
 #define TILE_PIXELS 8
 #define OAM_COUNT 40
 
-#define VRAM_TILES      0x8000
-//#define VRAM_TILES      0x9000
-#define VRAM_TILEMAP    0x9800
-
 #define rP1     0xFF00
 #define rDIV    0xFF04
 #define rTIMA   0xFF05
@@ -72,7 +68,7 @@
 #define LCDCF_OBJ16     0x04
 #define LCDCF_OBJOFF    0x00  // OBJ Display
 #define LCDCF_OBJON     0x02
-#define LCDCF_BGOFF     0x00  // BG Display 
+#define LCDCF_BGOFF     0x00  // BG Display
 #define LCDCF_BGON      0x01
 
 #define P1F_GET_BTN  0x10
@@ -97,7 +93,7 @@ typedef struct GameBoy {
     // Tiles are 8x8 pixels (also called patterns or characters)
     // Stored with color ID's from 0 to 3 or 2 bits per pixel
     // 8x8x2 = 128 bits = 16 bytes/tile
-    uint8_t display[WIDTH*HEIGHT];
+    uint8_t display[SCRN_VX*SCRN_VY]; // 256x256 pixels
 
     // 0000-3FFF    16 KiB ROM bank 00
     // 4000-7FFF    16 KiB ROM bank 01~NN
