@@ -1040,7 +1040,14 @@ void gb_exec(GameBoy *gb, Inst inst)
     else if (inst.size == 3) {
         uint16_t n = inst.data[1] | (inst.data[2] << 8);
         if (b == 0xC3) {
-            gb_log_inst("JP 0x%04X", n);
+            static bool infinite_loop = false;
+            if (!infinite_loop) {
+                gb_log_inst("JP 0x%04X", n);
+            }
+            if (n == gb->PC && !infinite_loop) {
+                printf("Detected infinite loop...\n");
+                infinite_loop = true;
+            }
             gb->PC = n;
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
             Reg16 reg = b >> 4;
