@@ -956,6 +956,14 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_reg(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
             gb->PC += inst.size;
+        } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            gb_log_inst("RRC %s", gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg);
+            uint8_t res = (value >> 1) | (value >> 7);
+            gb_set_reg(gb, reg, res);
+            gb_set_flags(gb, res == 0, 0, 0, value & 1);
+            gb->PC += inst.size;
         } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1F) {
             Reg8 reg = inst.data[1] & 0x7;
             gb_log_inst("RR %s", gb_reg_to_str(reg));

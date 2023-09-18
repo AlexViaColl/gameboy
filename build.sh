@@ -2,7 +2,7 @@
 
 set -xe
 
-CFLAGS="-Wall -Wextra -Werror -pedantic -ggdb `pkg-config --cflags sdl2` -Wno-error=unused-function"
+CFLAGS="-Wall -Wextra -Werror -pedantic -ggdb `pkg-config --cflags sdl2` -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-parameter"
 #CFLAGS="-ggdb `pkg-config --cflags sdl2`"
 LIBS="`pkg-config --libs sdl2`"
 
