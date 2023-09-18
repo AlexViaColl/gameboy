@@ -19,9 +19,21 @@ static size_t bp_count = 0;
 static uint16_t bp[MAX_BREAKPOINTS];
 
 typedef struct RomHeader {
-    uint8_t entry[4];
-    uint8_t logo[48];
-    char title[16];
+    uint8_t entry[4];       // 0100-0103 (4)
+    uint8_t logo[48];       // 0104-0133 (48)
+    char title[16];         // 0134-0143 (16)
+                            // 013F-0142 (4)    Manufacturer code in new cartridges
+                            // 0143      (1)    CGB flag ($80 CGB compat, $C0 CGB only)
+    uint8_t new_licensee[2];// 0144-0145 (2)    Nintendo, EA, Bandai, ...
+    uint8_t sgb;            // 0146      (1)
+    uint8_t cart_type;      // 0147      (1)    ROM Only, MBC1, MBC1+RAM, ...
+    uint8_t rom_size;       // 0148      (1)    32KiB, 64KiB, 128KiB, ...
+    uint8_t ram_size;       // 0149      (1)    0, 8KiB, 32KiB, ...
+    uint8_t dest_code;      // 014A      (1)    Japan / Overseas
+    uint8_t old_licensee;   // 014B      (1)
+    uint8_t mask_version;   // 014C      (1)    Usually 0
+    uint8_t header_check;   // 014D      (1)    Check of bytes 0134-014C (Boot ROM)
+    uint8_t global_check[2];// 014E-014F (2)    Not verified
 } RomHeader;
 
 uint8_t *read_entire_file(const char *path, size_t *size);
@@ -1203,21 +1215,39 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     printf("Size: %lx\n", size);
     assert(size > 0x14F);
     RomHeader *header = (RomHeader*)(raw + 0x100);
-    uint8_t cartridge_type = *(raw + 0x147);
-    printf("Title: %s\n", header->title);
-    printf("Logo: ");
-    if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
-        printf("NOT Present\n");
+    if (strlen(header->title)) {
+        printf("Title: %s\n", header->title);
     } else {
-        printf("Present\n");
+        printf("Title:");
+        for (int i = 0; i < 16; i++) printf(" %02X", header->title[i]);
+        printf("\n");
     }
-    printf("Entry: ");
-    for (int i = 0; i < 4; i++) {
-        printf("0x%02X ", header->entry[i]);
+    if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
+        fprintf(stderr, "Nintendo Logo does NOT match\n");
+        exit(1);
     }
-    printf("\nCartridge Type: 0x%02X\n", cartridge_type);
+    printf("CGB: %02X\n", header->title[15]);
+    printf("New licensee code: %02X %02X\n", header->new_licensee[0], header->new_licensee[1]);
+    printf("SGB: %02X\n", header->sgb);
+    printf("Cartridge Type: %02X\n", header->cart_type);
+    printf("ROM size: %d KiB\n", 32*(1 << header->rom_size));
+    printf("RAM size: %02X\n", header->ram_size);
+    printf("Destination code: %02X\n", header->dest_code);
+    printf("Old licensee code: %02X\n", header->old_licensee);
+    printf("Mask ROM version number: %02X\n", header->mask_version);
+    printf("Header checksum: %02X\n", header->header_check);
+    uint8_t checksum = 0;
+    for (uint16_t addr = 0x0134; addr <= 0x014C; addr++) {
+        checksum = checksum - raw[addr] - 1;
+    }
+    if (header->header_check != checksum) {
+        fprintf(stderr, "  Checksum does NOT match: %02X vs. %02X\n", header->header_check, checksum);
+        exit(1);
+    }
+
+    printf("Global checksum: %02X %02X\n", header->global_check[0], header->global_check[1]);
     printf("\n\n");
-    assert(cartridge_type == 0);
+    assert(header->cart_type == 0);
 
     memcpy(gb->memory, raw, size);
 
