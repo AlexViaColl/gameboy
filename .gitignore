@@ -1,6 +1,7 @@
 roms/
-roms-build/
 tmp/
+
+*.gb
 
 gb
 test
