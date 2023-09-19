@@ -799,7 +799,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("RETI");
             gb->IME = 1;
             gb->PC = addr;
-        } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) {
+        } else if (b == 0xC1 || b == 0xD1 || b == 0xE1) {
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("POP %s", gb_reg16_to_str(reg));
             uint8_t low = gb_read_memory(gb, gb->SP + 0);
@@ -807,10 +807,24 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_reg16(gb, reg, (high << 8) | low);
             gb->SP += 2;
             gb->PC += inst.size;
-        } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) {
+        } else if (b == 0xF1) {
+            gb_log_inst("POP AF");
+            uint8_t low = gb_read_memory(gb, gb->SP + 0);
+            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            gb->AF = (high << 8) | low;
+            gb->SP += 2;
+            gb->PC += inst.size;
+        } else if (b == 0xC5 || b == 0xD5 || b == 0xE5) {
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("PUSH %s", gb_reg16_to_str(reg));
             uint16_t value = gb_get_reg16(gb, reg);
+            gb->SP -= 2;
+            gb_write_memory(gb, gb->SP + 0, value & 0xff);
+            gb_write_memory(gb, gb->SP + 1, value >> 8);
+            gb->PC += inst.size;
+        } else if (b == 0xF5) {
+            gb_log_inst("PUSH AF");
+            uint16_t value = gb->AF;
             gb->SP -= 2;
             gb_write_memory(gb, gb->SP + 0, value & 0xff);
             gb_write_memory(gb, gb->SP + 1, value >> 8);
