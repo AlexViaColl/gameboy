@@ -656,7 +656,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0x2A || b == 0x3A) {
-            gb_log_inst("LD A,(HL%c)", b == 0x22 ? '+' : '-');
+            gb_log_inst("LD A,(HL%c)", b == 0x2A ? '+' : '-');
             uint8_t value = gb_read_memory(gb, gb->HL);
             gb_set_reg(gb, REG_A, value);
             if (b == 0x2A) gb->HL += 1;
