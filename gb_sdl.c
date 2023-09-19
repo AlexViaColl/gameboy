@@ -21,7 +21,7 @@
 #define CYAN    0x00FFFFFF
 
 #define BG          0x131313FF
-#define DBG_GRID    0x00C400FF
+#define DBG_GRID    0x222222FF
 #define DBG_VIEW    0xFFFF14FF
 
 typedef enum ViewerType {
@@ -219,7 +219,7 @@ int main(int argc, char **argv)
 
     int width = SCALE*WIDTH;
     int height = SCALE*HEIGHT;
-    window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, SDL_WINDOW_RESIZABLE);
+    window = SDL_CreateWindow("GameBoy Emulator", 0, 0, width, height, 0/*SDL_WINDOW_RESIZABLE*/);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
         exit(1);
@@ -300,9 +300,9 @@ int main(int argc, char **argv)
         }
 
         // Update
-        //for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 20; i++) {
             gb_tick(&gb, dt_ms);
-        //}
+        }
 
         // Render
         sdl_render(&gb, renderer);

@@ -53,22 +53,27 @@
 #define _VRAM9000   0x9000
 #define _SCRN0      0x9800  // Tilemap Offset (32x32 1-byte tile ids => 1KiB)
 #define _SCRN1      0x9C00
+#define _SRAM       0xA000
+#define _RAM        0xC000
+#define _OAMRAM     0xFE00
+#define _IO         0xFF00
+#define _HRAM       0xFF80
 
-#define LCDCF_OFF       0x00  // LCD Control
+#define LCDCF_OFF       0x00  // LCDC.7: LCD Control
 #define LCDCF_ON        0x80
-#define LCDCF_WIN9800   0x00  // Window Tile Map Select
+#define LCDCF_WIN9800   0x00  // LCDC.6: Window Tile Map Select
 #define LCDCF_WIN9C00   0x40
-#define LCDCF_WINOFF    0x00  // Window Display
+#define LCDCF_WINOFF    0x00  // LCDC.5: Window Display
 #define LCDCF_WINON     0x20
-#define LCDCF_BG8800    0x00  // BG & Window Tile Data Select
+#define LCDCF_BG8800    0x00  // LCDC.4: BG & Window Tile Data Select
 #define LCDCF_BG8000    0x10
-#define LCDCF_BG9800    0x00  // BG Tile Map Select
+#define LCDCF_BG9800    0x00  // LCDC.3: BG Tile Map Select
 #define LCDCF_BG9C00    0x08
-#define LCDCF_OBJ8      0x00  // OBJ Size
+#define LCDCF_OBJ8      0x00  // LCDC.2: OBJ Size
 #define LCDCF_OBJ16     0x04
-#define LCDCF_OBJOFF    0x00  // OBJ Display
+#define LCDCF_OBJOFF    0x00  // LCDC.1: OBJ Display
 #define LCDCF_OBJON     0x02
-#define LCDCF_BGOFF     0x00  // BG Display
+#define LCDCF_BGOFF     0x00  // LCDC.0: BG Display
 #define LCDCF_BGON      0x01
 
 #define P1F_GET_BTN  0x10

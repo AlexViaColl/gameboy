@@ -840,8 +840,15 @@ void gb_exec(GameBoy *gb, Inst inst)
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
         if (b == 0x18) {
+            static bool infinite_loop = false;
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-            gb_log_inst("JR %d", r8);
+            if (!infinite_loop) {
+                gb_log_inst("JR %d", r8);
+            }
+            if (r8 == -2 && !infinite_loop) {
+                printf("Detected infinite loop...\n");
+                infinite_loop = true;
+            }
             gb->PC = (gb->PC + inst.size) + r8;
         } else if ( // LD reg,d8
             b == 0x06 || b == 0x16 || b == 0x26 || b == 0x36 ||
@@ -1113,46 +1120,11 @@ static size_t gb_tile_coord_to_pixel(int row, int col)
     return row_pixel*SCRN_VX + col_pixel;
 }
 
-static void gb_render_tile(GameBoy *gb, int row, int col, int tile_idx)
+static void fill_solid_tile(GameBoy *gb, int x, int y, uint8_t color)
 {
-    assert(row >= 0 && row < 32);
-    assert(col >= 0 && col < 32);
-    static const uint8_t PALETTE[4] = {0x00, 0x40, 0x80, 0xFF};
-    uint8_t bgp = gb->memory[rBGP]; // E4 - 11|10|01|00
-    uint8_t bgp_tbl[] = {bgp >> 6, (bgp >> 4) & 3, (bgp >> 2) & 3, bgp & 3};
-
-    uint8_t lcdc = gb->memory[rLCDC];
-    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
-        _VRAM8000 : _VRAM9000;
-
-    const uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*TILE_SIZE;
-    size_t tile_off = gb_tile_coord_to_pixel(row, col);
-    for (int tile_row = 0; tile_row < TILE_PIXELS; tile_row++) {
-        uint8_t low_bitplane = tile[tile_row*2+0];
-        uint8_t high_bitplane = tile[tile_row*2+1];
-        for (int tile_col = 0; tile_col < TILE_PIXELS; tile_col++) {
-            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
-            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
-            low_bitplane <<= 1;
-            high_bitplane <<= 1;
-
-            uint8_t color_idx = (bit1 << 1) | bit0;
-            uint8_t color = PALETTE[bgp_tbl[color_idx]];
-
-            gb->display[tile_off + tile_row*TILE_PIXELS + tile_col] = color;
-        }
-    }
-}
-
-static void fill_solid_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t color)
-{
-    assert(tile_x >= 0 && tile_x < 32);
-    assert(tile_y >= 0 && tile_y < 32);
-    size_t tile_row = tile_y*8;
-    size_t tile_col = tile_x*8;
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
-            gb->display[(row+tile_row)*256 + (col+tile_col)] = color;
+            gb->display[(row+y)*256 + (col+x)] = color;
         }
     }
 }
@@ -1163,14 +1135,12 @@ static void fill_solid_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t color)
 //    0xFE, 0xFE, 0x7C, 0x7C, 0x38, 0x38, 0x10, 0x10,
 //};
 //fill_tile(gb, 0, 0, tile);
-static void fill_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t *tile)
+static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparency)
 {
     // tile is 16 bytes
-    assert(tile_x >= 0 && tile_x < 32);
-    assert(tile_y >= 0 && tile_y < 32);
-    static const uint8_t PALETTE[4] = {0x40, 0xFF, 0x80, 0x00};
-    size_t tile_row = tile_y*8;
-    size_t tile_col = tile_x*8;
+    uint8_t bgp = gb->memory[rBGP];
+    uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
+    uint8_t bgp_tbl[] = {(bgp >> 0) & 3, (bgp >> 2) & 3, (bgp >> 4) & 3, (bgp >> 6) & 3};
     for (int row = 0; row < 8; row++) {
         // 64 pixels, but only 16 bytes (2 bytes per row)
         uint8_t low_bitplane = tile[row*2+0];
@@ -1181,8 +1151,11 @@ static void fill_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t *tile)
             low_bitplane <<= 1;
             high_bitplane <<= 1;
             uint8_t color_idx = (bit1 << 1) | bit0; // 0-3
-            uint8_t color = PALETTE[color_idx];
-            gb->display[(row+tile_row)*256 + (col+tile_col)] = color;
+            uint8_t palette_idx = bgp_tbl[color_idx];
+            uint8_t color = PALETTE[palette_idx];
+            if (!transparency || palette_idx != 0) {
+                gb->display[(row+y)*256 + (col+x)] = color;
+            }
         }
     }
 }
@@ -1190,42 +1163,55 @@ static void fill_tile(GameBoy *gb, int tile_x, int tile_y, uint8_t *tile)
 void gb_render(GameBoy *gb)
 {
     uint8_t lcdc = gb->memory[rLCDC];
-    //if (lcdc != 0) assert(0);
-    //if ((lcdc & LCDCF_OFF) == LCDCF_OFF) return;
+    if ((lcdc & LCDCF_ON) != LCDCF_ON) return;
 
     uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
         _VRAM8000 : _VRAM9000;
-    (void)bg_win_td_off;
 
     // Render the Background
     if ((lcdc & LCDCF_BGON) == LCDCF_BGON) {
-        uint16_t bg_tm_off = (lcdc & LCDCF_BG9800) == LCDCF_BG9800 ? _SCRN0 : _SCRN1;
+        uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
 
         for (int row = 0; row < SCRN_VY_B; row++) {
             for (int col = 0; col < SCRN_VX_B; col++) {
                 int tile_idx = gb->memory[bg_tm_off + row*32 + col];
-                //fill_solid_tile(gb, col, row, 0xff);
+                //fill_solid_tile(gb, col*8, row*8, 0xff);
                 uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
-                fill_tile(gb, col, row, tile);
-                //gb_render_tile(gb, row, col, tile_idx);
+                fill_tile(gb, col*8, row*8, tile, false);
             }
         }
     }
 
     // Render the Window
+    if ((lcdc & LCDCF_WINON) == LCDCF_WINON) {
+        //uint8_t win_tm_off = (lcdc & LCDCF_WIN9C00) == LCDCF_WIN9C00 ? _SCRN1 : _SCRN0;
+        assert(0 && "Window rendering is not implemented");
+    }
 
     // Render the Sprites (OBJ)
+    if ((lcdc & LCDCF_OBJON) == LCDCF_OBJON) {
+        assert((lcdc & LCDCF_OBJ16) == 0 && "Only 8x8 sprites supported");
+        for (int i = 0; i < OAM_COUNT; i++) {
+            uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
+            uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
+            uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
+            //uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
+
+            uint8_t *tile = gb->memory + _VRAM8000 + tile_idx*16;
+            fill_tile(gb, x, y, tile, true);
+        }
+    }
 }
 
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
-    printf("Size: %lx\n", size);
+    printf("  ROM Size: %lx\n", size);
     assert(size > 0x14F);
     RomHeader *header = (RomHeader*)(raw + 0x100);
     if (strlen(header->title)) {
-        printf("Title: %s\n", header->title);
+        printf("  Title: %s\n", header->title);
     } else {
-        printf("Title:");
+        printf("  Title:");
         for (int i = 0; i < 16; i++) printf(" %02X", header->title[i]);
         printf("\n");
     }
@@ -1233,31 +1219,32 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         fprintf(stderr, "Nintendo Logo does NOT match\n");
         exit(1);
     }
-    printf("CGB: %02X\n", header->title[15]);
-    printf("New licensee code: %02X %02X\n", header->new_licensee[0], header->new_licensee[1]);
-    printf("SGB: %02X\n", header->sgb);
-    printf("Cartridge Type: %02X\n", header->cart_type);
-    printf("ROM size: %d KiB\n", 32*(1 << header->rom_size));
-    printf("RAM size: %02X\n", header->ram_size);
-    printf("Destination code: %02X\n", header->dest_code);
-    printf("Old licensee code: %02X\n", header->old_licensee);
-    printf("Mask ROM version number: %02X\n", header->mask_version);
-    printf("Header checksum: %02X\n", header->header_check);
+    printf("  CGB: %02X\n", (uint8_t)header->title[15]);
+    printf("  New licensee code: %02X %02X\n", header->new_licensee[0], header->new_licensee[1]);
+    printf("  SGB: %02X\n", header->sgb);
+    printf("  Cartridge Type: %02X\n", header->cart_type);
+    printf("  ROM size: %d KiB\n", 32*(1 << header->rom_size));
+    printf("  RAM size: %02X\n", header->ram_size);
+    printf("  Destination code: %02X\n", header->dest_code);
+    printf("  Old licensee code: %02X\n", header->old_licensee);
+    printf("  Mask ROM version number: %02X\n", header->mask_version);
+    printf("  Header checksum: %02X\n", header->header_check);
     uint8_t checksum = 0;
     for (uint16_t addr = 0x0134; addr <= 0x014C; addr++) {
         checksum = checksum - raw[addr] - 1;
     }
     if (header->header_check != checksum) {
-        fprintf(stderr, "  Checksum does NOT match: %02X vs. %02X\n", header->header_check, checksum);
+        fprintf(stderr, "    Checksum does NOT match: %02X vs. %02X\n", header->header_check, checksum);
         exit(1);
     }
 
-    printf("Global checksum: %02X %02X\n", header->global_check[0], header->global_check[1]);
-    printf("\n\n");
-    assert(header->cart_type == 0);
+    printf("  Global checksum: %02X %02X\n", header->global_check[0], header->global_check[1]);
+    printf("\n");
+    //assert(header->cart_type == 0);
 
-    memcpy(gb->memory, raw, size);
+    memcpy(gb->memory, raw, size > 0xFFFF ? 0xFFFF : size);
 
+    printf("Executing...\n");
     gb->PC = 0x100;
     // Should we set SP = $FFFE as specified in GBCPUman.pdf ???
 
