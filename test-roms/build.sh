@@ -10,6 +10,8 @@ build_rom()
     rm "$1.o"
 }
 
+build_rom "test"
+
 build_rom "hello"
 build_rom "tile"
 build_rom "unbricked"

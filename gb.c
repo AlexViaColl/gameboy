@@ -161,13 +161,18 @@ void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
 
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
-    if (addr == rLCDC && value != 0) {
-        printf("[rLCDC] = %02X\n", value);
-        //assert(0);
-    }
-    gb->memory[addr] = value;
-    if (addr == 0xFF00) {
+    if (addr == rP1/*0xFF00*/) {
+        gb->memory[addr] = value;
         gb_write_joypad_input(gb, value);
+    } else if (addr == rLCDC/*0xFF40*/) {
+        gb->memory[addr] = value;
+        printf("[rLCDC] = %02X\n", value);
+    } else if (addr == rSCY/*0xFF42*/ || addr == rSCX/*0xFF43*/) {
+        gb->memory[addr] = value;
+        printf("[%s] = %d\n", addr == rSCY ? "rSCY" : "rSCX", value);
+        //assert(value == 0 || 0);
+    } else {
+        gb->memory[addr] = value;
     }
     return;
 
@@ -1168,7 +1173,9 @@ static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparenc
             uint8_t palette_idx = bgp_tbl[color_idx];
             uint8_t color = PALETTE[palette_idx];
             if (!transparency || palette_idx != 0) {
-                gb->display[(row+y)*256 + (col+x)] = color;
+                int r = (row+y) % 256;
+                int c = (col+x) % 256;
+                gb->display[r*256 + c] = color;
             }
         }
     }
@@ -1186,12 +1193,16 @@ void gb_render(GameBoy *gb)
     if ((lcdc & LCDCF_BGON) == LCDCF_BGON) {
         uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
 
+        //int x = 0;
+        //int y = 0;
+        int x = gb->memory[rSCX];
+        int y = gb->memory[rSCY];
         for (int row = 0; row < SCRN_VY_B; row++) {
             for (int col = 0; col < SCRN_VX_B; col++) {
                 int tile_idx = gb->memory[bg_tm_off + row*32 + col];
                 //fill_solid_tile(gb, col*8, row*8, 0xff);
                 uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
-                fill_tile(gb, col*8, row*8, tile, false);
+                fill_tile(gb, x + col*8, y + row*8, tile, false);
             }
         }
     }

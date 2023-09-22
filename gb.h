@@ -32,20 +32,50 @@
 #define TILE_PIXELS 8
 #define OAM_COUNT 40
 
-#define rP1     0xFF00
-#define rDIV    0xFF04
-#define rTIMA   0xFF05
-#define rTMA    0xFF06
-#define rTAC    0xFF07
-#define rIF     0xFF0F
-#define rLCDC   0xFF40
-#define rSCY    0xFF42
-#define rSCX    0xFF43
-#define rLY     0xFF44
-#define rBGP    0xFF47
-#define rWY     0xFF4A
-#define rWX     0xFF4B
-#define rIE     0xFFFF
+#define rP1     0xFF00 // Joypad
+#define rSB     0xFF01 // Serial transfer data
+#define rSC     0xFF02 // Serial transfer control
+#define rDIV    0xFF04 // Divider register
+#define rTIMA   0xFF05 // Timer counter
+#define rTMA    0xFF06 // Timer modulo
+#define rTAC    0xFF07 // Timer control
+#define rIF     0xFF0F // Interrupt flag
+
+#define rNR10   0xFF10 // Sound channel 1 sweep
+#define rNR11   0xFF11 // Sound channel 1 length timer & duty cycle
+#define rNR12   0xFF12 // Sound channel 1 volume & envelope
+#define rNR13   0xFF13 // Sound channel 1 period low
+#define rNR14   0xFF14 // Sound channel 1 period high & control
+#define rNR21   0xFF16 // Sound channel 2 length timer & duty cycle
+#define rNR22   0xFF17 // Sound channel 2 volume & envelope
+#define rNR23   0xFF18 // Sound channel 2 period low
+#define rNR24   0xFF19 // Sound channel 2 period high & control
+#define rNR30   0xFF1A // Sound channel 3 DAC enable
+#define rNR31   0xFF1B // Sound channel 3 length timer
+#define rNR32   0xFF1C // Sound channel 3 output level
+#define rNR33   0xFF1D // Sound channel 3 period low
+#define rNR34   0xFF1E // Sound channel 3 period high & control
+#define rNR41   0xFF20 // Sound channel 4 length timer
+#define rNR42   0xFF21 // Sound channel 4 volume & envelope
+#define rNR43   0xFF22 // Sound channel 4 frequency & randomness
+#define rNR44   0xFF23 // Sound channel 4 control
+#define rNR50   0xFF24 // Master volume & VIN panning
+#define rNR51   0xFF25 // Sound panning
+#define rNR52   0xFF26 // Sound on/off
+
+#define rLCDC   0xFF40 // LCD control
+#define rSTAT   0xFF41 // LCD status
+#define rSCY    0xFF42 // Viewport Y position
+#define rSCX    0xFF43 // Viewport X position
+#define rLY     0xFF44 // LCD Y coordinate
+#define rLYC    0xFF45 // LY compare
+#define rDMA    0xFF46 // OAM DMA source address & start
+#define rBGP    0xFF47 // BG palette data
+#define rOBP0   0xFF48 // OBJ palette 0 data
+#define rOBP1   0xFF49 // OBJ palette 1 data
+#define rWY     0xFF4A // Window Y position
+#define rWX     0xFF4B // Window X position plus 7
+#define rIE     0xFFFF // Interrupt enable
 
 #define _VRAM       0x8000
 #define _VRAM8000   0x8000  // Tile Data (3 x 128 16-byte tiles => 3 x 2KiB)
