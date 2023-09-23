@@ -18,11 +18,14 @@ $ ./gb <path to ROM>
 ## References
 [Pan Docs](https://gbdev.io/pandocs/) \
 [RGBDS](https://rgbds.gbdev.io/) \
-[Gameboy Instruction set](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) \
+[GameBoy Instruction Set Table](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) \
 [LR35902 Assembler and Disassembler](https://github.com/herrhotzenplotz/lr35902as/) \
 [GameBoy CPU Manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf) \
+[GameBoy Programming Manual](https://ia903208.us.archive.org/9/items/GameBoyProgManVer1.1/GameBoyProgManVer1.1.pdf) \
 [Awesome GameBoy Development](https://github.com/gbdev/awesome-gbdev) \
-[GBDK](https://github.com/gbdk-2020/gbdk-2020)
+[Gameboy-logs](https://github.com/wheremyfoodat/Gameboy-logs) \
+[Cheezball Rising: A new Game Boy Color game](https://eev.ee/everything/tags/cheezball-rising/)
+[GBDK](https://github.com/gbdk-2020/gbdk-2020) \
 
 ## License
 [MIT](./LICENSE)
