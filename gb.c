@@ -429,7 +429,7 @@ Inst gb_fetch_inst(GameBoy *gb)
         return (Inst){.data = data, .size = 1};
     } else if (b == 0x0F || b == 0x1F) {
         return (Inst){.data = data, .size = 1};
-    } else if (b == 0x27 || b == 0x2F) {
+    } else if (b == 0x27 || b == 0x2F || b == 0x37 || b == 0x3F) {
         return (Inst){.data = data, .size = 1};
     } else if (b >= 0x40 && b <= 0x7F) {
         return (Inst){.data = data, .size = 1};
@@ -1035,6 +1035,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_reg(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
             gb->PC += inst.size;
+        } else if (inst.data[1] >= 0x10 && inst.data[1] <= 0x17) {
+            Reg8 reg = inst.data[1] & 0x7;
+            gb_log_inst("RL %s", gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg);
+            uint8_t c = gb_get_flag(gb, Flag_C);
+            uint8_t res = (value << 1) | (c & 1);
+            gb_set_reg(gb, reg, res);
+            gb_set_flags(gb, res == 0, 0, 0, value >> 7);
+            gb->PC += inst.size;
         } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1F) {
             Reg8 reg = inst.data[1] & 0x7;
             gb_log_inst("RR %s", gb_reg_to_str(reg));
@@ -1051,6 +1060,14 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t res = value << 1;
             gb_set_reg(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
+            gb->PC += inst.size;
+        } else if (inst.data[1] >= 0x28 && inst.data[1] <= 0x2F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            gb_log_inst("SRA %s", gb_reg_to_str(reg));
+            uint8_t value = gb_get_reg(gb, reg);
+            uint8_t res = value >> 1;
+            gb_set_reg(gb, reg, res);
+            gb_set_flags(gb, res == 0, 0, 0, value & 1);
             gb->PC += inst.size;
         } else if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
             Reg8 reg = inst.data[1] & 0x7;
