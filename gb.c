@@ -1222,6 +1222,9 @@ void gb_render(GameBoy *gb)
             uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
             //uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
 
+            //x += gb->memory[rSCX];
+            //y += gb->memory[rSCY];
+
             uint8_t *tile = gb->memory + _VRAM8000 + tile_idx*16;
             fill_tile(gb, x, y, tile, true);
         }
@@ -1283,6 +1286,7 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     size_t size;
     uint8_t *raw = read_entire_file(path, &size);
     gb_load_rom(gb, raw, size);
+    gb->step_debug = true;
     free(raw);
 }
 
