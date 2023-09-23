@@ -156,6 +156,7 @@ typedef struct GameBoy {
     double timer_clock;
     double timer_div;   // Ticks at 16384Hz (in ms)
     double timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
+    double timer_ly;    // Ticks at ~9180 Hz (every 0.1089 ms)
 
     int (*printf)(const char *fmt, ...);
 

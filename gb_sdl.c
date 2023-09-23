@@ -181,9 +181,13 @@ void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
     int x = (w - (160*pixel_dim))/2;
     int y = (h - (144*pixel_dim))/2;
     if (viewer_type == VT_GAME) {
+        uint16_t scx = gb->memory[rSCX];
+        uint16_t scy = gb->memory[rSCY];
         for (int row = 0; row < 144; row++) {
+            uint16_t px_row = (row+scy) % 256;
             for (int col = 0; col < 160; col++) {
-                uint8_t color = gb->display[row*256 + col];
+                uint16_t px_col = (col+scx) % 256;
+                uint8_t color = gb->display[(px_row)*256 + (px_col)];
                 SDL_SetRenderDrawColor(renderer, color, color, color, 255);
                 SDL_Rect r = {
                     x+col*pixel_dim, y+row*pixel_dim,
@@ -235,14 +239,17 @@ int main(int argc, char **argv)
     Uint64 counter_freq = SDL_GetPerformanceFrequency();
     Uint64 start_counter = SDL_GetPerformanceCounter();
     Uint64 prev_counter = start_counter;
+    double frame_ms = 0;
     while (gb.running) {
         Uint64 curr_counter = SDL_GetPerformanceCounter();
         Uint64 delta_counter = curr_counter - prev_counter;
         prev_counter = curr_counter;
         double dt_ms = (double)delta_counter / (counter_freq / 1000.0);
+        frame_ms += dt_ms;
         //printf("dt: %f ms\n", dt_ms);
 
         // Input
+#if 1
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 gb.running = false;
@@ -298,14 +305,18 @@ int main(int argc, char **argv)
                 }
             }
         }
+#endif
 
         // Update
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 1; i++) {
             gb_tick(&gb, dt_ms);
         }
 
         // Render
-        sdl_render(&gb, renderer);
+        if (frame_ms > 16.0) {
+            sdl_render(&gb, renderer);
+            frame_ms -= 16.0;
+        }
     }
 
     return 0;
