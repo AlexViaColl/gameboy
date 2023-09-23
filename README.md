@@ -24,8 +24,8 @@ $ ./gb <path to ROM>
 [GameBoy Programming Manual](https://ia903208.us.archive.org/9/items/GameBoyProgManVer1.1/GameBoyProgManVer1.1.pdf) \
 [Awesome GameBoy Development](https://github.com/gbdev/awesome-gbdev) \
 [Gameboy-logs](https://github.com/wheremyfoodat/Gameboy-logs) \
-[Cheezball Rising: A new Game Boy Color game](https://eev.ee/everything/tags/cheezball-rising/)
-[GBDK](https://github.com/gbdk-2020/gbdk-2020) \
+[Cheezball Rising: A new Game Boy Color game](https://eev.ee/everything/tags/cheezball-rising/) \
+[GBDK](https://github.com/gbdk-2020/gbdk-2020)
 
 ## License
 [MIT](./LICENSE)
