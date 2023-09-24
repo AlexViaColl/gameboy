@@ -142,7 +142,7 @@ typedef struct GameBoy {
     // FF00-FF7F     I/O Registers
     // FF80-FFFE     High RAM (HRAM)
     // FFFF-FFFF     Interrup Enable Register (IE)
-    uint8_t memory[0xFFFF];
+    uint8_t memory[0x10000];
 
     uint8_t button_a;
     uint8_t button_b;
