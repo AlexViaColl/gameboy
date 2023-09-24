@@ -568,18 +568,27 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
+    uint8_t IE = gb->memory[rIE];
+    uint8_t IF = gb->memory[rIF];
+    if (gb->halted) {
+        if ((IF & IE) == 0) return;
+        gb->halted = false;
+    }
+
     if (gb->IME) {
-        uint8_t IE = gb->memory[rIE];
-        uint8_t IF = gb->memory[rIF];
         if (((IF & 0x04) == 0x04) && ((IE & 0x04) == 0x04)) {
+            if (gb->halted) gb->halted = false;
+
             gb->SP -= 2;
             gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
             gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
             gb->PC = 0x0050;
 
             // Clear IME and corresponding bit of IF
-            gb->IME = 0;
-            gb->memory[rIF] &= ~0x04;
+            if ((IF & 0x04) == 0x04) {
+                gb->IME = 0;
+                gb->memory[rIF] &= ~0x04;
+            }
             return;
         }
 
@@ -611,7 +620,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0x10) {
             gb_log_inst("STOP");
             gb_write_timer(gb, rDIV, 0);
-            //assert(0);
+            gb->PC += inst.size;
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 src = (b >> 4) & 0x3;
             gb_log_inst("ADD HL,%s", gb_reg16_to_str(src));
@@ -768,6 +777,8 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b >= 0x40 && b <= 0x7F) {
             if (b == 0x76) {
                 gb_log_inst("HALT");
+                gb->halted = true;
+                gb->PC += inst.size;
                 return;
             }
             Reg8 src = b & 0x7;
@@ -1446,7 +1457,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
                 // VSync ~60Hz
                 // 60*153 ~9180 times/s (run every 0.1089 ms)
                 // TODO: Enable this when not running Blargg tests (and comparing the logs)
-                //gb->memory[rLY] += 1;
+                gb->memory[rLY] += 1;
                 if (gb->memory[rLY] > 153) {
                     // Run this line 60 times/s (60Hz)
                     gb->memory[rLY] = 0;
@@ -1460,7 +1471,6 @@ void gb_tick(GameBoy *gb, double dt_ms)
     if (gb->memory[rLY] == 144) {
         gb_render(gb);
     }
-    return;
 
     // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
     if (gb->timer_div <= 0) {
@@ -1489,15 +1499,18 @@ void gb_tick(GameBoy *gb, double dt_ms)
         if (gb->timer_tima <= 0) {
             gb->memory[rTIMA] += 1;
             gb->timer_tima += 1000.0 / freq; 
-            printf("Increasing TIMA %02X -> %02X\n", (uint8_t)(gb->memory[rTIMA] - 1), gb->memory[rTIMA]);
+            //fprintf(stderr, "Increasing TIMA %02X -> %02X\n", (uint8_t)(gb->memory[rTIMA] - 1), gb->memory[rTIMA]);
             if (gb->memory[rTIMA] == 0) {
-                printf("Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
+                //fprintf(stderr, "Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
                 gb->memory[rTIMA] = gb->memory[rTMA];
                 // TODO: Trigger interrupt
-                gb_trigger_interrupt(gb);
+                gb->memory[rIF] |= 0x04;
+                //gb_trigger_interrupt(gb);
             }
         }
     }
+
+    return;
 
     // HACK: increase the LY register without taking VSync/HSync into consideration!!!
     gb->memory[rLY] += 1;

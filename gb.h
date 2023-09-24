@@ -160,6 +160,7 @@ typedef struct GameBoy {
     int (*printf)(const char *fmt, ...);
 
     uint64_t inst_executed;
+    bool halted;
     bool running;
     bool paused;
     bool step_debug;
