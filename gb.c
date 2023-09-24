@@ -685,8 +685,33 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flags(gb, 0, 0, 0, c);
             gb->PC += inst.size;
         } else if (b == 0x27) {
+            // TODO: Improve/Fix this implementation
             gb_log_inst("DAA");
-            // TODO
+            uint8_t a = gb_get_reg(gb, REG_A);
+            int res = a;
+            uint8_t c = 0;
+            if (gb_get_flag(gb, Flag_N)) {
+                // Previous operation was a subtraction
+                if (gb_get_flag(gb, Flag_C)) {
+                    res -= 0x60;
+                    c = 1;
+                }
+                res -= 0x06;
+            } else {
+                // Previous operation was an addition
+                if ((a & 0xF) > 0x09) {
+                    res += 0x06;
+                }
+                if ((a & 0xF0) > 0x90) {
+                    res += 0x60;
+                    c = 1;
+                } else if (gb_get_flag(gb, Flag_C)) {
+                    res += 0x60;
+                    c = 1;
+                }
+            }
+            gb_set_reg(gb, REG_A, res);
+            gb_set_flags(gb, res == 0, UNCHANGED, 0, c);
             gb->PC += inst.size;
         } else if (b == 0x2F) {
             gb_log_inst("CPL");
@@ -763,21 +788,22 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint8_t a = gb_get_reg(gb, REG_A);
             uint8_t r = gb_get_reg(gb, reg);
             uint8_t res = a + r;
+            int h = ((a & 0xF) + (r & 0xF)) > 0xF;
+            int c = ((a & 0xFF) + (r & 0xFF)) > 0xFF;
             gb_set_reg(gb, REG_A, res);
-            #define BIT3(x) (((x) >> 3) & 1)
-            uint8_t h = ((BIT3(a) == 1 || BIT3(r) == 1) && BIT3(res) == 0);
-            gb_set_flags(gb, res == 0, 0, h, (res < a));
+            gb_set_flags(gb, res == 0, 0, h, c);
             gb->PC += inst.size;
         } else if (b >= 0x88 && b <= 0x8F) {
             Reg8 reg = b & 0x7;
             gb_log_inst("ADC A,%s", gb_reg_to_str(reg));
             uint8_t a = gb_get_reg(gb, REG_A);
             uint8_t r = gb_get_reg(gb, reg);
-            uint8_t res = gb_get_flag(gb, Flag_C) + a + r;
+            uint8_t prev_c = gb_get_flag(gb, Flag_C);
+            uint8_t res = prev_c + a + r;
+            int h = ((a & 0xF) + (r & 0xF) + prev_c) > 0xF;
+            int c = ((a & 0xFF) + (r & 0xFF) + prev_c) > 0xFF;
             gb_set_reg(gb, REG_A, res);
-            #define BIT3(x) (((x) >> 3) & 1)
-            uint8_t h = ((BIT3(a) == 1 || BIT3(r) == 1) && BIT3(res) == 0);
-            gb_set_flags(gb, res == 0, 0, h, res < a);
+            gb_set_flags(gb, res == 0, 0, h, c);
             gb->PC += inst.size;
         } else if (b >= 0x90 && b <= 0x97) {
             Reg8 reg = b & 0x7;
@@ -794,10 +820,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             Reg8 reg = b & 0x7;
             gb_log_inst("SBC A,%s", gb_reg_to_str(reg));
             uint8_t a = gb_get_reg(gb, REG_A);
-            uint8_t res = (uint8_t)(a - gb_get_flag(gb, Flag_C) - gb_get_reg(gb, reg));
+            uint8_t r = gb_get_reg(gb, reg);
+            uint8_t prev_c = gb_get_flag(gb, Flag_C);
+            uint8_t res = (uint8_t)(a - prev_c - r);
+            int h = ((a & 0xF) - (r & 0xF) - prev_c) < 0;
+            int c = ((a & 0xFF) - (r & 0xFF) - prev_c) < 0;
             gb_set_reg(gb, REG_A, res);
-            uint8_t h = (a & 0xF) < (res & 0xF);
-            uint8_t c = (a & 0xF0) < (res & 0xF0);
             gb_set_flags(gb, res == 0, 1, h, c);
             gb->PC += inst.size;
         } else if (b >= 0xB0 && b <= 0xB7) {
@@ -1078,10 +1106,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
             gb->PC += inst.size;
         } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
+            // CB 08 => RRC B (B = 01, F = 00)
+            // B = 80, F = 10
             Reg8 reg = inst.data[1] & 0x7;
             gb_log_inst("RRC %s", gb_reg_to_str(reg));
             uint8_t value = gb_get_reg(gb, reg);
-            uint8_t res = (value >> 1) | (value >> 7);
+            uint8_t res = (value >> 1) | (value << 7);
             gb_set_reg(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
             gb->PC += inst.size;
@@ -1115,7 +1145,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             Reg8 reg = inst.data[1] & 0x7;
             gb_log_inst("SRA %s", gb_reg_to_str(reg));
             uint8_t value = gb_get_reg(gb, reg);
-            uint8_t res = value >> 1;
+            uint8_t res = (value & 0x80) | (value >> 1);
             gb_set_reg(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
             gb->PC += inst.size;
@@ -1172,7 +1202,6 @@ void gb_exec(GameBoy *gb, Inst inst)
             }
             if (n == gb->PC && !infinite_loop) {
                 printf("Detected infinite loop...\n");
-                exit(1);
                 infinite_loop = true;
             }
             gb->PC = n;
@@ -1229,6 +1258,7 @@ void gb_exec(GameBoy *gb, Inst inst)
     }
 
     assert(gb->PC <= 0xFFFF);
+    gb->inst_executed += 1;
 }
 
 static size_t gb_tile_coord_to_pixel(int row, int col)
@@ -1432,6 +1462,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
     //}
 
     // Copy tiles to display
+    //return; // TODO: Remove
     if (gb->memory[rLY] == 144) {
         gb_render(gb);
     }

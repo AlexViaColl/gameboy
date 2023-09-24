@@ -47,8 +47,7 @@
 #define rNR13   0xFF13 // Sound channel 1 period low
 #define rNR14   0xFF14 // Sound channel 1 period high & control
 #define rNR21   0xFF16 // Sound channel 2 length timer & duty cycle
-#define rNR22   0xFF17 // Sound channel 2 volume & envelope
-#define rNR23   0xFF18 // Sound channel 2 period low
+#define rNR22   0xFF17 // Sound channel 2 volume & envelope #define rNR23   0xFF18 // Sound channel 2 period low
 #define rNR24   0xFF19 // Sound channel 2 period high & control
 #define rNR30   0xFF1A // Sound channel 3 DAC enable
 #define rNR31   0xFF1B // Sound channel 3 length timer
@@ -160,6 +159,7 @@ typedef struct GameBoy {
 
     int (*printf)(const char *fmt, ...);
 
+    uint64_t inst_executed;
     bool running;
     bool paused;
     bool step_debug;
@@ -215,6 +215,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value);
 
 uint8_t gb_get_flag(GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);
+void gb_set_flags(GameBoy *gb, int z, int n, int h, int c);
 
 uint8_t gb_get_reg(GameBoy *gb, Reg8 reg);
 uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg);

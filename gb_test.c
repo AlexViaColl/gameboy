@@ -386,61 +386,6 @@ void test_inst_rra(void)
     test_end
 }
 
-// https://forums.nesdev.org/viewtopic.php?t=15944
-// https://ehaskins.com/2018-01-30%20Z80%20DAA/
-void test_inst_daa(void)
-{
-    test_begin
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0x33;
-    GameBoy gb = {0};
-    uint8_t data[] = {0x27};
-    Inst inst = {.data = data, .size = sizeof(data)};
-    gb.PC = start_pc;
-    gb_set_reg(&gb, REG_A, value);
-
-    // Addition     (N flag == 0)
-    // Subtraction  (N flag == 1)
-    //
-    // Case 1:
-    //   0x15   0001 0101
-    // + 0x12   0001 0010
-    // ------------------
-    //   0x27   0010 0111 => C=0,N=0,H=0 Valid BCD no adjustment required
-    //
-    // Case 2:
-    //   0x05   0000 0101
-    // + 0x05   0000 0101
-    // ------------------
-    //   0x0A   0000 1010 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x10 (add 6 to low nibble)
-    //
-    // Case 3
-    //   0x50   0101 0000
-    // + 0x50   0101 0000
-    // ------------------
-    //   0xA0   1010 0000 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x00 (add 6 to high nibble)
-    //
-    // Case 4
-    //   0x55   0101 0101
-    // + 0x55   0101 0101
-    // ------------------
-    //   0xAA   1010 1010 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x10 (add 6 to both)
-    //
-    // Case 5
-    //   0x??   ???? 0111
-    // + 0x??   ???? 0111
-    // ------------------
-    //   0x??   ????
-
-    // The DAA instruction looks at the carry flag C and half-carry flag H
-    // and the value in register A, and determines if it must
-    // add 0x00, 0x06, 0x60, or 0x66, and then sets the output flags C,N,Z
-    gb_exec(&gb, inst);
-
-    assert(gb.PC == start_pc + 1);
-    test_end
-}
-
 void test_inst_cpl(void)
 {
     test_begin
@@ -1050,14 +995,236 @@ void test_inst_jp_mem_hl(void)
     uint8_t data[] = {0xE9};
     Inst inst = {.data = data, .size = sizeof(data)};
     uint16_t addr = 0x1234;
-    gb_write_memory(&gb, gb.HL+0, addr & 0xff);
-    gb_write_memory(&gb, gb.HL+1, addr >> 8);
+    gb.HL = addr;
 
     gb_exec(&gb, inst);
 
     assert(gb.PC == addr);
     test_end
 }
+
+void test_inst_rrc(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    uint8_t data[] = {0xCB, 0x08};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_set_reg(&gb, REG_B, 0x01);
+
+    gb_exec(&gb, inst);
+
+    assert(gb_get_reg(&gb, REG_B) == 0x80);
+    assert(gb_get_flag(&gb, Flag_C) == 1);
+    test_end
+}
+
+void test_inst_sra(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    uint8_t data[] = {0xCB, 0x28};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_set_reg(&gb, REG_B, 0x80);
+
+    gb_exec(&gb, inst);
+
+    assert(gb_get_reg(&gb, REG_B) == 0xC0);
+    test_end
+}
+
+void test_inst_add_a_hl_mem(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    uint8_t data[] = {0x86};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_set_reg(&gb, REG_A, 0xFF);
+    gb.HL = 0x1000;
+    gb_write_memory(&gb, gb.HL, 0x01);
+    // A = FF
+    // +   01
+    // ------
+    //   1 00 => Z, C and H are set
+
+    gb_exec(&gb, inst);
+
+    assert(gb_get_reg(&gb, REG_A) == 0x00);
+    assert(gb_get_flag(&gb, Flag_Z) == 1);
+    assert(gb_get_flag(&gb, Flag_N) == 0);
+    assert(gb_get_flag(&gb, Flag_H) == 1);
+    assert(gb_get_flag(&gb, Flag_C) == 1);
+    test_end
+}
+
+// https://forums.nesdev.org/viewtopic.php?t=15944
+// https://ehaskins.com/2018-01-30%20Z80%20DAA/
+void test_inst_daa(void)
+{
+    test_begin
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00);
+
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_flag(&gb, Flag_Z) == 1);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x0F); // BCD: we can only represent 0-9
+
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x15);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0xF0); // BCD: we can only represent 0-9
+
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x50);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 1);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x10); // BCD: we can only represent 0-9
+
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x10);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 0, 0, 0, 1);
+        // A = 80
+        //   + 80
+        // ----------
+        //   1 00 C=1
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x60);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 1);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0xF0); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 0, 0, 0, 1);
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x50);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 1);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 1, 1, 1, 0); // F = ZNH- (After subtraction)
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0xFA);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_N) == 1);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 1, 1, 1, 1); // F = ZNHC (After subtraction)
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x9A);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_N) == 1);
+        assert(gb_get_flag(&gb, Flag_H) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 1);
+    }
+
+#if 0
+    uint16_t start_pc = 0x0032;
+    uint8_t value = 0x33;
+    GameBoy gb = {0};
+    uint8_t data[] = {0x27};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb.PC = start_pc;
+    gb_set_reg(&gb, REG_A, value);
+
+    // Addition     (N flag == 0)
+    // Subtraction  (N flag == 1)
+    //
+    // Case 1:
+    //   0x15   0001 0101
+    // + 0x12   0001 0010
+    // ------------------
+    //   0x27   0010 0111 => C=0,N=0,H=0 Valid BCD no adjustment required
+    //
+    // Case 2:
+    //   0x05   0000 0101
+    // + 0x05   0000 0101
+    // ------------------
+    //   0x0A   0000 1010 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x10 (add 6 to low nibble)
+    //
+    // Case 3
+    //   0x50   0101 0000
+    // + 0x50   0101 0000
+    // ------------------
+    //   0xA0   1010 0000 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x00 (add 6 to high nibble)
+    //
+    // Case 4
+    //   0x55   0101 0101
+    // + 0x55   0101 0101
+    // ------------------
+    //   0xAA   1010 1010 => C=0,N=0,H=0 Invalid BCD, Adjust to 0x10 (add 6 to both)
+    //
+    // Case 5
+    //   0x??   ???? 0111
+    // + 0x??   ???? 0111
+    // ------------------
+    //   0x??   ????
+
+    // The DAA instruction looks at the carry flag C and half-carry flag H
+    // and the value in register A, and determines if it must
+    // add 0x00, 0x06, 0x60, or 0x66, and then sets the output flags C,N,Z
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == start_pc + 1);
+#endif
+    test_end
+}
+
 
 int main(void)
 {
@@ -1123,7 +1290,6 @@ int main(void)
     test_inst_rra();
     printf("\n");
 
-    //test_inst_daa(); // BCD
     test_inst_cpl();
     test_inst_scf();
     test_inst_ccf();
@@ -1206,6 +1372,11 @@ int main(void)
     printf("\n");
 
     test_inst_jp_mem_hl();
+
+    test_inst_rrc();
+    test_inst_sra();
+    test_inst_add_a_hl_mem();
+    test_inst_daa();
 
     return 0;
 }

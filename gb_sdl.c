@@ -308,9 +308,12 @@ int main(int argc, char **argv)
 #endif
 
         // Update
+        //if ((gb.inst_executed % 100000) == 0)
+        //    fprintf(stderr, "Inst Count: %lu\n", gb.inst_executed);
         for (int i = 0; i < 1; i++) {
             gb_tick(&gb, dt_ms);
         }
+        //continue;
 
         // Render
         if (frame_ms > 16.0) {
