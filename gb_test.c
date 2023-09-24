@@ -1173,6 +1173,51 @@ void test_inst_daa(void)
         assert(gb_get_flag(&gb, Flag_C) == 1);
     }
 
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x9A); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 0, 0, 0, 0); // F = ---- (After addition)
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_flag(&gb, Flag_Z) == 1);
+        assert(gb_get_flag(&gb, Flag_N) == 0);
+        assert(gb_get_flag(&gb, Flag_H) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 1);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 0, 0, 1, 0); // F = ---- (After addition)
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x06);
+        assert(gb_get_flag(&gb, Flag_Z) == 0);
+        assert(gb_get_flag(&gb, Flag_N) == 0);
+        assert(gb_get_flag(&gb, Flag_H) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
+    {
+        GameBoy gb = {0};
+        uint8_t data[] = {0x27};
+        Inst inst = {.data = data, .size = sizeof(data)};
+        gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
+        gb_set_flags(&gb, 0, 1, 0, 0); // F = -N-- (After subtraction)
+        gb_exec(&gb, inst);
+
+        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_flag(&gb, Flag_Z) == 1);
+        assert(gb_get_flag(&gb, Flag_N) == 1);
+        assert(gb_get_flag(&gb, Flag_H) == 0);
+        assert(gb_get_flag(&gb, Flag_C) == 0);
+    }
+
 #if 0
     uint16_t start_pc = 0x0032;
     uint8_t value = 0x33;

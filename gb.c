@@ -202,12 +202,6 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         gb->memory[addr] = value;
         fprintf(stderr, "%04X: [IF/*$FF0F*/] = %02X\n", gb->PC, value);
         // Interrupt requested, check if IME is enabled and the corresponding bit in IE
-        if (gb->IME) {
-            uint8_t IE = gb->memory[rIE];
-            if (((value & 0x04) == 0x04) && ((IE & 0x04) == 0x04)) {
-                //gb->PC = 0x0050;
-            }
-        }
     } else if (addr == rIE/*0xFFFF*/) {
         gb->memory[addr] = value;
         fprintf(stderr, "Writing [IE/*$FFFF*/] = %02X\n", value);
@@ -574,12 +568,6 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
-    //if (gb->PC == 0xC0A6) { // C9 => RET
-    //if (gb->PC == 0xC249) {
-    //    gb_dump(gb);
-    //    exit(1);
-    //}
-
     if (gb->IME) {
         uint8_t IE = gb->memory[rIE];
         uint8_t IF = gb->memory[rIF];
@@ -593,6 +581,10 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->IME = 0;
             gb->memory[rIF] &= ~0x04;
             return;
+        }
+
+        if ((IE & 0x04) == 0x04) {
+            // 
         }
 
         //if (gb->ime_cycles == 1) {
@@ -688,24 +680,26 @@ void gb_exec(GameBoy *gb, Inst inst)
             // TODO: Improve/Fix this implementation
             gb_log_inst("DAA");
             uint8_t a = gb_get_reg(gb, REG_A);
-            int res = a;
+            uint8_t n = gb_get_flag(gb, Flag_N);
+            uint8_t prev_h = gb_get_flag(gb, Flag_H);
+            uint8_t prev_c = gb_get_flag(gb, Flag_C);
+            uint8_t res = a;
             uint8_t c = 0;
-            if (gb_get_flag(gb, Flag_N)) {
+            if (n) {
                 // Previous operation was a subtraction
-                if (gb_get_flag(gb, Flag_C)) {
+                if (prev_c) {
                     res -= 0x60;
                     c = 1;
                 }
-                res -= 0x06;
+                if (prev_h) {
+                    res -= 0x06;
+                }
             } else {
                 // Previous operation was an addition
-                if ((a & 0xF) > 0x09) {
+                if (((a & 0xF) > 0x09) || prev_h) {
                     res += 0x06;
                 }
-                if ((a & 0xF0) > 0x90) {
-                    res += 0x60;
-                    c = 1;
-                } else if (gb_get_flag(gb, Flag_C)) {
+                if ((a > 0x99) | prev_c) {
                     res += 0x60;
                     c = 1;
                 }
@@ -1451,8 +1445,8 @@ void gb_tick(GameBoy *gb, double dt_ms)
                 gb->timer_ly -= 0.1089;
                 // VSync ~60Hz
                 // 60*153 ~9180 times/s (run every 0.1089 ms)
-                // TODO: Enable this when not running Blargg tests
-                gb->memory[rLY] += 1;
+                // TODO: Enable this when not running Blargg tests (and comparing the logs)
+                //gb->memory[rLY] += 1;
                 if (gb->memory[rLY] > 153) {
                     // Run this line 60 times/s (60Hz)
                     gb->memory[rLY] = 0;
