@@ -276,7 +276,7 @@ int main(int argc, char **argv)
                 case SDLK_p:
                     if (e.key.type == SDL_KEYDOWN) {
                         gb.paused = !gb.paused;
-                        if (gb.paused) gb.step_debug = true;
+                        //if (gb.paused) gb.step_debug = true;
                     }
                     break;
                 case SDLK_SPACE:
@@ -287,6 +287,9 @@ int main(int argc, char **argv)
                     break;
                 case SDLK_a:
                     gb.button_b = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+                case SDLK_RETURN:
+                    gb.button_start = e.key.type == SDL_KEYDOWN ? 1 : 0;
                     break;
                 case SDLK_UP:
                     gb.dpad_up = e.key.type == SDL_KEYDOWN ? 1 : 0;
@@ -308,8 +311,12 @@ int main(int argc, char **argv)
 #endif
 
         // Update
-        //if ((gb.inst_executed % 100000) == 0)
+        //if ((gb.inst_executed % 100000) == 0) {
+        //if (gb.inst_executed == 9940000) {
         //    fprintf(stderr, "Inst Count: %lu\n", gb.inst_executed);
+        //    getchar();
+        //    exit(1);
+        //}
         for (int i = 0; i < 1; i++) {
             gb_tick(&gb, dt_ms);
         }

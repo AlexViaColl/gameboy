@@ -86,6 +86,11 @@ void gb_write_joypad_input(GameBoy *gb, uint8_t value)
         } else {
             gb->memory[rP1] |= 0x02;
         }
+        if (gb->button_start) {
+            gb->memory[rP1] &= ~0x08;
+        } else {
+            gb->memory[rP1] |= 0x08;
+        }
     } else if (value == P1F_GET_DPAD) {
         if (gb->dpad_right) {
             gb->memory[rP1] &= ~0x01;
@@ -131,7 +136,7 @@ void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
             // ...
             // FE -> Interrupt every 2 increments of TAC
             // FF -> Interrupt every increment of TAC
-            int modulo = 0x100 - value;
+            //int modulo = 0x100 - value;
             //printf("write timer: [rTMA %04X] = %02X\n", addr, value);
             //printf("Interrupt every %d increments of TAC\n", modulo);
             gb->memory[rTMA] = value;
@@ -167,6 +172,19 @@ void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
 
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
+    // MBC1
+    if (gb->cart_type == 1) {
+        if (addr <= 0x1FFF) {
+            fprintf(stderr, "RAM Enable\n");
+        } else if (addr <= 0x3FFF) {
+            fprintf(stderr, "ROM Bank Number: %02X\n", value);
+        } else if (addr <= 0x5FFF) {
+            fprintf(stderr, "RAM Bank Number\n");
+        } else if (addr <= 0x7FFF) {
+            fprintf(stderr, "Banking Mode Select\n");
+        }
+    }
+
     if (addr == rP1/*0xFF00*/) {
         gb->memory[addr] = value;
         gb_write_joypad_input(gb, value);
@@ -538,7 +556,7 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
     va_end(args);
 
     Inst inst = gb_fetch_inst(gb);
-#if 0
+#if 1
     gb->printf("%04X:  ", gb->PC);
     gb->printf(" %15s  | ", buf);
     for (size_t i = 0; i < 3; i++) {
@@ -592,8 +610,18 @@ void gb_exec(GameBoy *gb, Inst inst)
             return;
         }
 
-        if ((IE & 0x04) == 0x04) {
-            // 
+        if (((IF & 0x01) == 0x01) && ((IE & 0x01) == 0x01)) {
+            gb->SP -= 2;
+            gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
+            gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
+            gb->PC = 0x0040;
+
+            // Clear IME and corresponding bit of IF
+            if ((IF & 0x01) == 0x01) {
+                gb->IME = 0;
+                gb->memory[rIF] &= ~0x01;
+            }
+            return;
         }
 
         //if (gb->ime_cycles == 1) {
@@ -1365,12 +1393,10 @@ void gb_render(GameBoy *gb)
 
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
-#if 0
-    printf("  ROM Size: %lx\n", size);
-#endif
+    printf("  ROM Size: $%lx (%ld KiB, %ld bytes)\n", size, size / 1024, size);
+    printf("  ROM Banks: #%zu\n", size / 0x4000);
     assert(size > 0x14F);
     RomHeader *header = (RomHeader*)(raw + 0x100);
-#if 0
     if (strlen(header->title)) {
         printf("  Title: %s\n", header->title);
     } else {
@@ -1404,21 +1430,19 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     printf("  Global checksum: %02X %02X\n", header->global_check[0], header->global_check[1]);
     printf("\n");
     //assert(header->cart_type == 0);
-#endif
 
     memcpy(gb->memory, raw, size > 0xFFFF ? 0xFFFF : size);
 
-#if 0
     printf("Executing...\n");
-#endif
-#if 1
+    gb->cart_type = header->cart_type;
+
     gb->AF = 0x01B0;
     gb->BC = 0x0013;
     gb->DE = 0x00D8;
     gb->HL = 0x014D;
     gb->SP = 0xFFFE;
     gb->memory[rLY] = 0x90;
-#endif
+
     gb->PC = 0x100;
     // Should we set SP = $FFFE as specified in GBCPUman.pdf ???
 
@@ -1440,6 +1464,7 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
 
 void gb_tick(GameBoy *gb, double dt_ms)
 {
+    if (gb->paused) return;
     gb->elapsed_ms += dt_ms;
     gb->timer_sec -= dt_ms;
     gb->timer_div -= dt_ms;
@@ -1459,6 +1484,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
                 // TODO: Enable this when not running Blargg tests (and comparing the logs)
                 gb->memory[rLY] += 1;
                 if (gb->memory[rLY] > 153) {
+                    gb->memory[rIF] |= 0x01;
                     // Run this line 60 times/s (60Hz)
                     gb->memory[rLY] = 0;
                 }
@@ -1503,7 +1529,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
             if (gb->memory[rTIMA] == 0) {
                 //fprintf(stderr, "Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
                 gb->memory[rTIMA] = gb->memory[rTMA];
-                // TODO: Trigger interrupt
+                // Trigger interrupt
                 gb->memory[rIF] |= 0x04;
                 //gb_trigger_interrupt(gb);
             }
