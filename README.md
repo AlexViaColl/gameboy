@@ -13,7 +13,7 @@ $ ./build.sh
 $ ./gb <path to ROM>
 ```
 
-![GameBoy Boot](./screenshot.png)
+![GameBoy Boot](./boot_hello.gif)
 
 ## References
 [Pan Docs](https://gbdev.io/pandocs/) \
