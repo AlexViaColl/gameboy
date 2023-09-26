@@ -1270,6 +1270,23 @@ void test_inst_daa(void)
     test_end
 }
 
+void test_inst_cp_n(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    uint8_t data[] = {0xFE, 0x90};
+    Inst inst = {.data = data, .size = sizeof(data)};
+    gb_set_reg(&gb, REG_A, 0x90);
+
+    gb_exec(&gb, inst);
+
+    assert(gb_get_reg(&gb, REG_A) == 0x90);
+    assert(gb_get_flag(&gb, Flag_Z) == 1);
+    assert(gb_get_flag(&gb, Flag_N) == 1);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
+    assert(gb_get_flag(&gb, Flag_C) == 0);
+    test_end
+}
 
 int main(void)
 {
@@ -1422,6 +1439,7 @@ int main(void)
     test_inst_sra();
     test_inst_add_a_hl_mem();
     test_inst_daa();
+    test_inst_cp_n();
 
     return 0;
 }

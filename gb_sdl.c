@@ -249,7 +249,6 @@ int main(int argc, char **argv)
         //printf("dt: %f ms\n", dt_ms);
 
         // Input
-#if 1
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
                 gb.running = false;
@@ -308,7 +307,6 @@ int main(int argc, char **argv)
                 }
             }
         }
-#endif
 
         // Update
         //if ((gb.inst_executed % 100000) == 0) {
@@ -317,7 +315,7 @@ int main(int argc, char **argv)
         //    getchar();
         //    exit(1);
         //}
-        for (int i = 0; i < 1; i++) {
+        for (int i = 0; i < 10; i++) {
             gb_tick(&gb, dt_ms);
         }
         //continue;
