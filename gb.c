@@ -58,7 +58,7 @@ typedef struct RomHeader {
 uint8_t *read_entire_file(const char *path, size_t *size);
 bool get_command(GameBoy *gb);
 
-void gb_dump(GameBoy *gb)
+void gb_dump(const GameBoy *gb)
 {
     uint8_t flags = gb->AF & 0xff;
     gb->printf("$PC: $%04X, A: $%02X, F: %c%c%c%c, "
@@ -85,7 +85,7 @@ void gb_trigger_interrupt(GameBoy *gb)
     gb->PC = 0x0050;
 }
 
-uint8_t gb_read_memory(GameBoy *gb, uint16_t addr)
+uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr)
 {
     if (addr == 0xFF0F) {
         fprintf(stderr, "Reading [IF/*$FF0F*/] = %02X\n", gb->memory[addr]);
@@ -262,7 +262,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
     }
 }
 
-uint8_t gb_get_flag(GameBoy *gb, Flag flag)
+uint8_t gb_get_flag(const GameBoy *gb, Flag flag)
 {
     switch (flag) {
         case Flag_Z: return (gb->AF >> 7) & 1;
@@ -396,7 +396,7 @@ void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value)
     }
 }
 
-uint8_t gb_get_reg(GameBoy *gb, Reg8 reg)
+uint8_t gb_get_reg(const GameBoy *gb, Reg8 reg)
 {
     // reg (0-7): B, C, D, E, H, L, (HL), A
     switch (reg) {
@@ -441,7 +441,7 @@ void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value)
     }
 }
 
-uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg)
+uint16_t gb_get_reg16(const GameBoy *gb, Reg16 reg)
 {
     switch (reg) {
         case REG_BC: return gb->BC;
@@ -453,10 +453,10 @@ uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg)
     }
 }
 
-Inst gb_fetch_inst(GameBoy *gb)
+Inst gb_fetch_inst(const GameBoy *gb)
 {
     uint8_t b = gb_read_memory(gb, gb->PC);
-    uint8_t *data = &gb->memory[gb->PC];
+    const uint8_t *data = &gb->memory[gb->PC];
 
     if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
         b == 0xEB || b == 0xEC || b == 0xED || b == 0xF4 || b == 0xFC || b == 0xFD)
@@ -1521,6 +1521,9 @@ void gb_tick(GameBoy *gb, double dt_ms)
         gb->timer_sec += 1000.0;
 
         //if (get_command(gb)) {
+        if (!gb->step_debug || gb->next_inst) {
+            if (gb->next_inst) gb->next_inst = false;
+
             Inst inst = gb_fetch_inst(gb);
             gb_exec(gb, inst);
 
@@ -1536,7 +1539,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
                     gb->memory[rLY] = 0;
                 }
             }
-        //}
+        }
     //}
 
     // Copy tiles to display

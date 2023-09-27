@@ -168,10 +168,11 @@ typedef struct GameBoy {
     bool running;
     bool paused;
     bool step_debug;
+    bool next_inst;
 } GameBoy;
 
 typedef struct Inst {
-    uint8_t *data;
+    const uint8_t *data;
     size_t size;
 } Inst;
 
@@ -209,21 +210,21 @@ void gb_load_rom_file(GameBoy *gb, const char *path);
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);
 void gb_tick(GameBoy *gb, double dt_ms);
 
-Inst gb_fetch_inst(GameBoy *gb);
+Inst gb_fetch_inst(const GameBoy *gb);
 void gb_exec(GameBoy *gb, Inst inst);
 void gb_render(GameBoy *gb);
 
-void gb_dump(GameBoy *gb);
+void gb_dump(const GameBoy *gb);
 
-uint8_t gb_read_memory(GameBoy *gb, uint16_t addr);
+uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr);
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value);
 
-uint8_t gb_get_flag(GameBoy *gb, Flag flag);
+uint8_t gb_get_flag(const GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);
 void gb_set_flags(GameBoy *gb, int z, int n, int h, int c);
 
-uint8_t gb_get_reg(GameBoy *gb, Reg8 reg);
-uint16_t gb_get_reg16(GameBoy *gb, Reg16 reg);
+uint8_t gb_get_reg(const GameBoy *gb, Reg8 reg);
+uint16_t gb_get_reg16(const GameBoy *gb, Reg16 reg);
 void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value);
 void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value);
 

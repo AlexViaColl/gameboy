@@ -236,11 +236,9 @@ static void render_debug_text(SDL_Renderer *renderer, const char *text, int row,
 
 static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
 {
+    (void)w;
+    (void)h;
     if (viewer_type == VT_REGS) {
-        float w_tile = w/32.0f;
-        float h_tile = h/8.0f;
-        int tile_dim = (w_tile > h_tile) ? h_tile : w_tile;
-
         int row = 2;
         int col = 2;
         char text[64];
@@ -291,6 +289,38 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         sprintf(text, "WX  =%02X", gb->memory[rWX]);
         render_debug_text(renderer, text, row++, col);
         sprintf(text, "WY  =%02X", gb->memory[rWY]);
+        render_debug_text(renderer, text, row++, col);
+
+        row = 2;
+        col = 12;
+        render_debug_text(renderer, "CPU Regs", row++, col);
+        sprintf(text, "AF = %02X %02X", gb->AF >> 8, gb->AF & 0xFF);
+        render_debug_text(renderer, text, row, col);
+        sprintf(text, "%c%c%c%c",
+            gb_get_flag(gb, Flag_Z) ? 'Z' : '-',
+            gb_get_flag(gb, Flag_N) ? 'N' : '-',
+            gb_get_flag(gb, Flag_H) ? 'H' : '-',
+            gb_get_flag(gb, Flag_C) ? 'C' : '-');
+        render_debug_text(renderer, text, row++, col + 12);
+
+        sprintf(text, "BC = %02X %02X", gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C));
+        render_debug_text(renderer, text, row++, col);
+
+        sprintf(text, "DE = %02X %02X", gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E));
+        render_debug_text(renderer, text, row++, col);
+
+        sprintf(text, "HL = %04X", gb->HL);
+        render_debug_text(renderer, text, row++, col);
+        sprintf(text, "SP = %04X", gb->SP);
+        render_debug_text(renderer, text, row++, col);
+        sprintf(text, "PC = %04X", gb->PC);
+        render_debug_text(renderer, text, row++, col);
+
+        row++;
+        Inst inst = gb_fetch_inst(gb);
+        if (inst.size == 1) sprintf(text, "%02X", inst.data[0]);
+        else if (inst.size == 2) sprintf(text, "%02X %02X", inst.data[0], inst.data[1]);
+        else if (inst.size == 3) sprintf(text, "%02X %02X %02X", inst.data[0], inst.data[1], inst.data[2]);
         render_debug_text(renderer, text, row++, col);
     }
 }
@@ -489,6 +519,14 @@ int main(int argc, char **argv)
                     break;
                 case SDLK_LEFT:
                     gb.dpad_left = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                    break;
+
+                // Debug hotkeys
+                case SDLK_d:
+                    if (e.key.type == SDL_KEYDOWN) gb.step_debug = !gb.step_debug;
+                    break;
+                case SDLK_n:
+                    if (e.key.type == SDL_KEYDOWN) gb.next_inst = true;
                     break;
                 default:
                     break;
