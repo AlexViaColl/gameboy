@@ -148,6 +148,7 @@ typedef struct GameBoy {
     uint8_t button_a;
     uint8_t button_b;
     uint8_t button_start;
+    uint8_t button_select;
     uint8_t dpad_up;
     uint8_t dpad_down;
     uint8_t dpad_left;

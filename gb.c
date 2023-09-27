@@ -108,6 +108,11 @@ void gb_write_joypad_input(GameBoy *gb, uint8_t value)
         } else {
             gb->memory[rP1] |= 0x02;
         }
+        if (gb->button_select) {
+            gb->memory[rP1] &= ~0x04;
+        } else {
+            gb->memory[rP1] |= 0x04;
+        }
         if (gb->button_start) {
             gb->memory[rP1] &= ~0x08;
         } else {
@@ -208,7 +213,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
     }
 
     if (addr == rP1/*0xFF00*/) {
-        gb->memory[addr] = value;
+        //gb->memory[addr] = value;
         gb_write_joypad_input(gb, value);
     } else if (addr == rDIV/*0xFF04*/) {
         gb->memory[addr] = value;
@@ -1474,7 +1479,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 
     memcpy(gb->memory, raw, size > 0xFFFF ? 0xFFFF : size);
 
-#if 1
+#if 0
     gb_load_boot_rom(gb);
 #else
     gb->AF = 0x01B0;
@@ -1482,10 +1487,12 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     gb->DE = 0x00D8;
     gb->HL = 0x014D;
     gb->SP = 0xFFFE;
-    //gb->memory[rLY] = 0x90;
 
     gb->PC = 0x0100;
     gb->SP = 0xFFFE;
+
+    //gb->memory[rLY] = 0x90;
+    //gb->memory[rP1] = 0x00;
 #endif
 
     gb->timer_sec = 1000.0;
