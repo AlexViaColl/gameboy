@@ -144,6 +144,8 @@ typedef struct GameBoy {
     uint8_t memory[0x10000];
 
     uint8_t cart_type;
+    uint8_t *rom; // from 32 KiB (2 banks) to 8 MiB (512 banks)
+    uint32_t rom_bank_count;
 
     uint8_t button_a;
     uint8_t button_b;
@@ -211,6 +213,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);
 void gb_tick(GameBoy *gb, double dt_ms);
 
 Inst gb_fetch_inst(const GameBoy *gb);
+const char *gb_decode(Inst inst, char *buf, size_t size);
 void gb_exec(GameBoy *gb, Inst inst);
 void gb_render(GameBoy *gb);
 

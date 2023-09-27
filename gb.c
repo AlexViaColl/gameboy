@@ -205,6 +205,9 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
             fprintf(stderr, "RAM Enable\n");
         } else if (addr <= 0x3FFF) {
             fprintf(stderr, "ROM Bank Number: %02X\n", value);
+            if (value == 0) value = 1;
+            assert(value <= gb->rom_bank_count);
+            memcpy(gb->memory+0x4000, gb->rom + value*0x4000, 0x4000);
         } else if (addr <= 0x5FFF) {
             fprintf(stderr, "RAM Bank Number\n");
         } else if (addr <= 0x7FFF) {
@@ -453,6 +456,46 @@ uint16_t gb_get_reg16(const GameBoy *gb, Reg16 reg)
     }
 }
 
+#define gb_log_inst(...) gb_log_inst_internal(gb, __VA_ARGS__)
+void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
+{
+    if (gb->printf == NULL) return;
+
+    va_list args;
+    va_start(args, fmt);
+    char buf[256];
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    Inst inst = gb_fetch_inst(gb);
+#if 1
+    gb->printf("%04X:  ", gb->PC);
+    gb->printf(" %15s  | ", buf);
+    for (size_t i = 0; i < 3; i++) {
+        if (i < inst.size) {
+            gb->printf("%02X ", inst.data[i]);
+        } else {
+            gb->printf("   ");
+        }
+    }
+    gb->printf("| ");
+    gb_dump(gb);
+#else
+    printf("A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X",
+        gb_get_reg(gb, REG_A), gb->AF & 0xff,
+        gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C),
+        gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E),
+        gb_get_reg(gb, REG_H), gb_get_reg(gb, REG_L));
+
+    printf(" SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
+        gb->SP, gb->PC,
+        gb->memory[gb->PC+0],
+        gb->memory[gb->PC+1],
+        gb->memory[gb->PC+2],
+        gb->memory[gb->PC+3]);
+#endif
+}
+
 Inst gb_fetch_inst(const GameBoy *gb)
 {
     uint8_t b = gb_read_memory(gb, gb->PC);
@@ -571,44 +614,247 @@ Inst gb_fetch_inst(const GameBoy *gb)
     assert(0 && "Not implemented");
 }
 
-#define gb_log_inst(...) gb_log_inst_internal(gb, __VA_ARGS__)
-void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
+const char *gb_decode(Inst inst, char *buf, size_t size)
 {
-    if (gb->printf == NULL) return;
-
-    va_list args;
-    va_start(args, fmt);
-    char buf[256];
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-
-    Inst inst = gb_fetch_inst(gb);
-#if 1
-    gb->printf("%04X:  ", gb->PC);
-    gb->printf(" %15s  | ", buf);
-    for (size_t i = 0; i < 3; i++) {
-        if (i < inst.size) {
-            gb->printf("%02X ", inst.data[i]);
+    uint8_t b = inst.data[0];
+    if (inst.size == 1) {
+        if (b == 0x00) {
+            sprintf(buf, "NOP");
+        } else if (b == 0x10) {
+            sprintf(buf, "STOP");
+        } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
+            Reg16 src = (b >> 4) & 0x3;
+            sprintf(buf, "ADD HL,%s", gb_reg16_to_str(src));
+        } else if ( // INC reg
+            b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
+            b == 0x0C || b == 0x1C || b == 0x2C || b == 0x3C
+        ) {
+            Reg8 reg = (b >> 3) & 0x7;
+            sprintf(buf, "INC %s", gb_reg_to_str(reg));
+        } else if ( // DEC reg
+            b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
+            b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
+        ) {
+            Reg8 reg = (b >> 3) & 0x7;
+            sprintf(buf, "DEC %s", gb_reg_to_str(reg));
+        } else if (b == 0x07) {
+            sprintf(buf, "RLCA");
+        } else if (b == 0x0F) {
+            sprintf(buf, "RRCA");
+        } else if (b == 0x17) {
+            sprintf(buf, "RLA");
+        } else if (b == 0x1F) {
+            sprintf(buf, "RRA");
+        } else if (b == 0x27) {
+            sprintf(buf, "DAA");
+        } else if (b == 0x2F) {
+            sprintf(buf, "CPL");
+        } else if (b == 0x37) {
+            sprintf(buf, "SCF");
+        } else if (b == 0x3F) {
+            sprintf(buf, "CCF");
+        } else if (b == 0x0A || b == 0x1A) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "LD A,(%s)", gb_reg16_to_str(reg));
+        } else if (b == 0x02 || b == 0x12) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "LD (%s),A", gb_reg16_to_str(reg));
+        } else if (b == 0x22 || b == 0x32) {
+            sprintf(buf, "LD (HL%c),A", b == 0x22 ? '+' : '-');
+        } else if (b == 0x0A || b == 0x1A) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "LD A,(%s)", gb_reg16_to_str(reg));
+        } else if (b == 0x2A || b == 0x3A) {
+            sprintf(buf, "LD A,(HL%c)", b == 0x2A ? '+' : '-');
+        } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "INC %s", gb_reg16_to_str(reg));
+        } else if (b == 0x0B || b == 0x1B || b == 0x2B || b == 0x3B) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "DEC %s", gb_reg16_to_str(reg));
+        } else if (b >= 0x40 && b <= 0x7F) {
+            if (b == 0x76) {
+                sprintf(buf, "HALT");
+            }
+            Reg8 src = b & 0x7;
+            Reg8 dst = (b >> 3) & 0x7;
+            sprintf(buf, "LD %s,%s", gb_reg_to_str(dst), gb_reg_to_str(src));
+        } else if (b >= 0x80 && b <= 0x87) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "ADD A,%s", gb_reg_to_str(reg));
+        } else if (b >= 0x88 && b <= 0x8F) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "ADC A,%s", gb_reg_to_str(reg));
+        } else if (b >= 0x90 && b <= 0x97) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "SUB A,%s", gb_reg_to_str(reg));
+        } else if (b >= 0x98 && b <= 0x9F) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "SBC A,%s", gb_reg_to_str(reg));
+        } else if (b >= 0xB0 && b <= 0xB7) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "OR %s", gb_reg_to_str(reg));
+        } else if (b >= 0xB8 && b <= 0xBF) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "CP %s", gb_reg_to_str(reg));
+        } else if (b >= 0xA0 && b <= 0xA7) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "AND %s", gb_reg_to_str(reg));
+        } else if (b >= 0xA8 && b <= 0xAF) {
+            Reg8 reg = b & 0x7;
+            sprintf(buf, "XOR %s", gb_reg_to_str(reg));
+        } else if (b == 0xE2) {
+            sprintf(buf, "LD (C),A");
+        } else if (b == 0xF2) {
+            sprintf(buf, "LD A,(C)");
+        } else if (b == 0xF3 || b == 0xFB) {
+            sprintf(buf, b == 0xF3 ? "DI" : "EI");
+        } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
+            Flag f = (b >> 3) & 0x3;
+            sprintf(buf, "RET %s", gb_flag_to_str(f));
+        } else if (b == 0xC9) {
+            sprintf(buf, "RET");
+        } else if (b == 0xD9) {
+            sprintf(buf, "RETI");
+        } else if (b == 0xC1 || b == 0xD1 || b == 0xE1) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "POP %s", gb_reg16_to_str(reg));
+        } else if (b == 0xF1) {
+            sprintf(buf, "POP AF");
+        } else if (b == 0xC5 || b == 0xD5 || b == 0xE5) {
+            Reg16 reg = (b >> 4) & 0x3;
+            sprintf(buf, "PUSH %s", gb_reg16_to_str(reg));
+        } else if (b == 0xF5) {
+            sprintf(buf, "PUSH AF");
+        } else if (
+            b == 0xC7 || b == 0xD7 || b == 0xE7 || b == 0xF7 ||
+            b == 0xCF || b == 0xDF || b == 0xEF || b == 0xFF
+        ) {
+            uint8_t n = ((b >> 3) & 0x7)*8;
+            sprintf(buf, "RST %02XH", n);
+        } else if (b == 0xE9) {
+            sprintf(buf, "JP HL");
+        } else if (b == 0xF9) {
+            sprintf(buf, "LD SP,HL");
         } else {
-            gb->printf("   ");
+            assert(0 && "Instruction not implemented");
         }
     }
-    gb->printf("| ");
-    gb_dump(gb);
-#else
-    printf("A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X",
-        gb_get_reg(gb, REG_A), gb->AF & 0xff,
-        gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C),
-        gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E),
-        gb_get_reg(gb, REG_H), gb_get_reg(gb, REG_L));
+    // 2-byte instructions
+    else if (inst.size == 2 && b != 0xCB) {
+        if (b == 0x18) {
+            int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
+            sprintf(buf, "JR %d", r8);
+        } else if ( // LD reg,d8
+            b == 0x06 || b == 0x16 || b == 0x26 || b == 0x36 ||
+            b == 0x0E || b == 0x1E || b == 0x2E || b == 0x3E
+        ) {
+            Reg8 reg = (b >> 3) & 0x7;
+            sprintf(buf, "LD %s,0x%02X", gb_reg_to_str(reg), inst.data[1]);
+        } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
+            Flag f = (b >> 3) & 0x3;
+            sprintf(buf, "JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
+        } else if (b == 0x20) {
+            sprintf(buf, "JR NZ,0x%02X", inst.data[1]);
+        } else if (b == 0xE0) {
+            sprintf(buf, "LDH (FF00+%02X),A", inst.data[1]);
+        } else if (b == 0xC6) {
+            sprintf(buf, "ADD A,0x%02X", inst.data[1]);
+        } else if (b == 0xCE) {
+            sprintf(buf, "ADC A,0x%02X", inst.data[1]);
+        } else if (b == 0xD6) {
+            sprintf(buf, "SUB A,0x%02X", inst.data[1]);
+        } else if (b == 0xDE) {
+            sprintf(buf, "SBC A,0x%02X", inst.data[1]);
+        } else if (b == 0xE6) {
+            sprintf(buf, "AND A,0x%02X", inst.data[1]);
+        } else if (b == 0xE8) {
+            sprintf(buf, "ADD SP,0x%02X", inst.data[1]);
+        } else if (b == 0xF0) {
+            sprintf(buf, "LDH A,(FF00+%02X)", inst.data[1]);
+        } else if (b == 0xF6) {
+            sprintf(buf, "OR A,0x%02X", inst.data[1]);
+        } else if (b == 0xF8) {
+            sprintf(buf, "LD HL,SP+%d", (int8_t)inst.data[1]);
+        } else if (b == 0xEE) {
+            sprintf(buf, "XOR 0x%02X", inst.data[1]);
+        } else if (b == 0xFE) {
+            sprintf(buf, "CP 0x%02X", inst.data[1]);
+        } else {
+            assert(0 && "Instruction not implemented");
+        }
+    }
 
-    printf(" SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
-        gb->SP, gb->PC,
-        gb->memory[gb->PC+0],
-        gb->memory[gb->PC+1],
-        gb->memory[gb->PC+2],
-        gb->memory[gb->PC+3]);
-#endif
+    // Prefix CB
+    else if (inst.size == 2 && inst.data[0] == 0xCB) {
+        if (inst.data[1] <= 0x07) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "RLC %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "RRC %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x10 && inst.data[1] <= 0x17) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "RL %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "RR %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x20 && inst.data[1] <= 0x27) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "SLA %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x28 && inst.data[1] <= 0x2F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "SRA %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "SWAP %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3F) {
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "SRL %s", gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x40 && inst.data[1] <= 0x7F) {
+            uint8_t b = (inst.data[1] >> 3) & 0x7;
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "BIT %d,%s", b, gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xBF) {
+            uint8_t b = (inst.data[1] >> 3) & 0x7;
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "RES %d,%s", b, gb_reg_to_str(reg));
+        } else if (inst.data[1] >= 0xC0) {
+            uint8_t b = (inst.data[1] >> 3) & 0x7;
+            Reg8 reg = inst.data[1] & 0x7;
+            sprintf(buf, "SET %d,%s", b, gb_reg_to_str(reg));
+        } else {
+            assert(0 && "Instruction not implemented");
+        }
+    }
+
+    // 3-byte instructions
+    else if (inst.size == 3) {
+        uint16_t n = inst.data[1] | (inst.data[2] << 8);
+        if (b == 0xC3) {
+            sprintf(buf, "JP 0x%04X", n);
+        } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
+            Reg16 reg = b >> 4;
+            sprintf(buf, "LD %s,0x%04X", gb_reg16_to_str(reg), n);
+        } else if (b == 0x08) {
+            sprintf(buf, "LD (0x%04X),SP", n);
+        } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
+            Flag f = (b >> 3) & 0x3;
+            sprintf(buf, "JP %s,0x%04X", gb_flag_to_str(f), n);
+        } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
+            Flag f = (b >> 3) & 0x3;
+            sprintf(buf, "CALL %s,0x%04X", gb_flag_to_str(f), n);
+        } else if (b == 0xCD) {
+            sprintf(buf, "CALL 0x%04X", n);
+        } else if (b == 0xEA) {
+            sprintf(buf, "LD (0x%04X),A", n);
+        } else if (b == 0xFA) {
+            sprintf(buf, "LD A,(0x%04X)", n);
+        } else {
+            assert(0 && "Not implemented");
+        }
+    }
+    return buf;
 }
 
 void gb_exec(GameBoy *gb, Inst inst)
@@ -1477,7 +1723,21 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     gb->cart_type = header->cart_type;
     printf("Executing...\n");
 
-    memcpy(gb->memory, raw, size > 0xFFFF ? 0xFFFF : size);
+    // TODO: Handle MBC1
+    gb->rom = malloc(size);
+    assert(gb->rom);
+    if (gb->cart_type == 0) {
+        assert(size == 32*1024);
+        memcpy(gb->rom, raw, size);
+        gb->rom_bank_count = 2;
+
+        memcpy(gb->memory, raw, size);
+    } else if (gb->cart_type == 1) {
+        memcpy(gb->rom, raw, size);
+        gb->rom_bank_count = size / (16*1024);
+
+        memcpy(gb->memory, raw, 32*1024); // Copy only the first 2 banks
+    }
 
 #if 0
     gb_load_boot_rom(gb);

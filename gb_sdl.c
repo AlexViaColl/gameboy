@@ -243,6 +243,8 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         int col = 2;
         char text[64];
         render_debug_text(renderer, "Misc.", row++, col);
+        sprintf(text, "Type=%02X", gb->cart_type);
+        render_debug_text(renderer, text, row++, col);
         sprintf(text, "JOYP=%02X", gb->memory[rP1]);
         render_debug_text(renderer, text, row++, col);
 
@@ -317,7 +319,13 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         render_debug_text(renderer, text, row++, col);
 
         row++;
+        render_debug_text(renderer, "Next inst", row++, col);
         Inst inst = gb_fetch_inst(gb);
+        char decoded[32];
+        gb_decode(inst, decoded, sizeof(decoded));
+        sprintf(text, "%04X: %s", gb->PC, decoded);
+        render_debug_text(renderer, text, row++, col);
+
         if (inst.size == 1) sprintf(text, "%02X", inst.data[0]);
         else if (inst.size == 2) sprintf(text, "%02X %02X", inst.data[0], inst.data[1]);
         else if (inst.size == 3) sprintf(text, "%02X %02X %02X", inst.data[0], inst.data[1], inst.data[2]);
