@@ -1,0 +1,20 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: dependencies
+        run: apt-get update && apt-get install -y pkg-config libsdl2-dev
+
+      - name: build
+        run: ./build.sh
+
+      - name: test
+        run: ./test
