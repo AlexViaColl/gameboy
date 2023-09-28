@@ -177,7 +177,8 @@ typedef struct GameBoy {
 
 typedef struct Inst {
     const uint8_t *data;
-    size_t size;
+    uint8_t size;
+    uint8_t cycles;
 } Inst;
 
 typedef enum Reg8 {
@@ -208,7 +209,6 @@ typedef enum Flag {
     Flag_H  = 5,
     //FLAG_COUNT,
 } Flag;
-
 
 void gb_load_rom_file(GameBoy *gb, const char *path);
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);

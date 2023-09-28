@@ -1301,6 +1301,19 @@ void test_time_nop(void)
     test_end
 }
 
+void test_time_inc_reg16(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0x03;
+
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 1);
+
+    test_end
+}
 
 #if 0
 #include <time.h>
@@ -1510,6 +1523,7 @@ int main(void)
     test_inst_cp_n();
 
     test_time_nop();
+    test_time_inc_reg16();
 
     return 0;
 }
