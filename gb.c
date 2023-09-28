@@ -1755,7 +1755,6 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     //gb->memory[rP1] = 0x00;
 #endif
 
-    gb->timer_sec = 1000.0;
     gb->timer_div = (1000.0 / 16384.0);
 }
 
@@ -1777,33 +1776,35 @@ void gb_tick(GameBoy *gb, double dt_ms)
     gb->timer_div -= dt_ms;
     gb->timer_tima -= dt_ms;
     gb->timer_ly += dt_ms;
-    //if (gb->timer_sec <= 0.0) {
-        gb->timer_sec += 1000.0;
 
-        //if (get_command(gb)) {
-        if (!gb->step_debug || gb->next_inst) {
-            if (gb->next_inst) gb->next_inst = false;
+    gb->timer_mcycle += dt_ms;
+    if (gb->timer_mcycle < MCYCLE_MS) {
+        return;
+    }
+    gb->timer_mcycle -= MCYCLE_MS;
 
-            Inst inst = gb_fetch_inst(gb);
-            gb_exec(gb, inst);
 
-            if (gb->timer_ly > 0.1089) {
-                gb->timer_ly -= 0.1089;
-                // VSync ~60Hz
-                // 60*153 ~9180 times/s (run every 0.1089 ms)
-                // TODO: Enable this when not running Blargg tests (and comparing the logs)
-                gb->memory[rLY] += 1;
-                if (gb->memory[rLY] > 153) {
-                    gb->memory[rIF] |= 0x01;
-                    // Run this line 60 times/s (60Hz)
-                    gb->memory[rLY] = 0;
-                }
+    if (!gb->step_debug || gb->next_inst) {
+        if (gb->next_inst) gb->next_inst = false;
+
+        Inst inst = gb_fetch_inst(gb);
+        gb_exec(gb, inst);
+
+        if (gb->timer_ly > 0.1089) {
+            gb->timer_ly -= 0.1089;
+            // VSync ~60Hz
+            // 60*153 ~9180 times/s (run every 0.1089 ms)
+            // TODO: Enable this when not running Blargg tests (and comparing the logs)
+            gb->memory[rLY] += 1;
+            if (gb->memory[rLY] > 153) {
+                gb->memory[rIF] |= 0x01;
+                // Run this line 60 times/s (60Hz)
+                gb->memory[rLY] = 0;
             }
         }
-    //}
+    }
 
     // Copy tiles to display
-    //return; // TODO: Remove
     if (gb->memory[rLY] == 144) {
         gb_render(gb);
     }

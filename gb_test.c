@@ -19,15 +19,16 @@
     printf("%s", __func__);
 
 #define test_end \
-    if (pass) printf("\x1B[1m\x1B[92m%s\x1B[0m\n", "PASS");
+    if (pass) printf("\x1B[1m\x1B[92m%s\x1B[0m\n", "PASS");     \
+    else exit(1);
 
 #undef assert
 #define assert(b) do {                                          \
     if (!(b)) {                                                 \
         printf("\x1B[1m\x1B[91m%s\x1B[0m\n", "FAIL");           \
         printf("  %s:%d: %s\n", __FILE__, __LINE__, __func__);  \
+        printf("  Expected: %s\n", #b);                         \
         pass = false;                                           \
-        /*exit(1);*/                                                \
     }                                                           \
 } while (0)
 
@@ -259,8 +260,7 @@ void test_inst_dec_reg8(Reg8 reg)
     uint16_t start_pc = 0x0032;
     uint8_t value = 0xFF;
     GameBoy gb = {0};
-    gb_set_reg(&gb, reg, value);
-    gb_set_flag(&gb, Flag_N, 1);
+    gb_set_reg(&gb, reg, value); // REG = $FF
     uint8_t data[] = {0x05};
     data[0] |= (reg << 3);
     Inst inst = {.data = data, .size = sizeof(data)};
@@ -273,7 +273,7 @@ void test_inst_dec_reg8(Reg8 reg)
     // assert_flags(gb, "Z0H-");
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 1);
-    assert(gb_get_flag(&gb, Flag_H) == 1);
+    assert(gb_get_flag(&gb, Flag_H) == 0);
     test_end
 }
 
@@ -643,7 +643,7 @@ void test_inst_add_hl_reg16(Reg16 reg)
     }
     // -0HC
     assert(gb_get_flag(&gb, Flag_N) == 0);
-    assert(gb_get_flag(&gb, Flag_H) == 0); // Sould this be set??
+    assert(gb_get_flag(&gb, Flag_H) == 1);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     test_end
 }
@@ -702,7 +702,7 @@ void test_inst_halt(void)
 
     gb_exec(&gb, inst);
 
-    assert(gb.PC == start_pc);
+    assert(gb.PC == start_pc + 1);
     test_end
 }
 
@@ -1288,6 +1288,74 @@ void test_inst_cp_n(void)
     test_end
 }
 
+void test_time_nop(void)
+{
+    test_begin
+    GameBoy gb = {0};
+
+    gb_tick(&gb, 0);
+    assert(gb.PC == 0);
+
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 1);
+    test_end
+}
+
+
+#if 0
+#include <time.h>
+#include <sys/time.h>
+void foo(void)
+{
+    double freq = 4194304.0;
+    {
+    clock_t t1, t2;
+    t1 = t2 = clock();
+    while (t1 == t2) {
+        t2 = clock();
+    }
+    printf("%lf ms\n", (double)(t2 - t1) / CLOCKS_PER_SEC * 1000);
+    }
+
+    {
+    struct timeval t1, t2;
+    gettimeofday(&t1, 0);
+    t2 = t1;
+    while (t1.tv_sec == t2.tv_sec && t1.tv_usec == t2.tv_usec) {
+        gettimeofday(&t2, 0);
+    }
+    printf("(t2-t1).tv_sec: %ld, (t2-t1).tv_usec: %ld\n", t2.tv_sec-t1.tv_sec, t2.tv_usec-t1.tv_usec);
+
+    printf("t1 {.tv_sec: %ld, .tv_usec: %ld}\n", t1.tv_sec, t1.tv_usec);
+    printf("t2 {.tv_sec: %ld, .tv_usec: %ld}\n", t2.tv_sec, t2.tv_usec);
+    // tv_usec => microseconds
+    // 1 s = 1000 ms = 1000 * 1000 us
+
+    int cycles = 0;
+    //uint64_t us_elapsed = 0;
+    double us_per_cycle = 1000000.0 / 4194304.0;
+    double us_cycle = 0.0;
+    printf("Timing 1s\n");
+    gettimeofday(&t1, 0);
+    while (true) {
+        gettimeofday(&t2, 0);
+        uint64_t us = (t2.tv_sec - t1.tv_sec) * 1000 * 1000 + (t2.tv_usec - t1.tv_usec);
+        t1 = t2;
+        //us_elapsed += us;
+        us_cycle += (double)us;
+        while (us_cycle >= us_per_cycle) {
+            us_cycle -= us_per_cycle;
+            cycles += 1;
+        }
+
+
+        if (cycles >= 4194304) break;
+    }
+    printf("Done!\n");
+    }
+}
+#endif
+
 int main(void)
 {
     test_inst_nop();
@@ -1440,6 +1508,8 @@ int main(void)
     test_inst_add_a_hl_mem();
     test_inst_daa();
     test_inst_cp_n();
+
+    test_time_nop();
 
     return 0;
 }

@@ -10,6 +10,7 @@
 #define HEIGHT 144 // 18 tiles
 
 #define CPU_FREQ    4194304.0 // 4.19 MHz
+#define MCYCLE_MS   (1000.0 / 1048576.0)
 #define VSYNC       59.73
 #define HSYNC       9198.0    // 9.198 KHz
 
@@ -158,6 +159,7 @@ typedef struct GameBoy {
 
     double elapsed_ms;  // Milliseconds elapsed since the start
     double timer_sec;   // Timer for counting seconds
+    double timer_mcycle;// Timer for counting Mcycles (~1 MHz => 1048576 Hz)
     double timer_clock;
     double timer_div;   // Ticks at 16384Hz (in ms)
     double timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)

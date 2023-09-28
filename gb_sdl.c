@@ -464,9 +464,8 @@ int main(int argc, char **argv)
         Uint64 curr_counter = SDL_GetPerformanceCounter();
         Uint64 delta_counter = curr_counter - prev_counter;
         prev_counter = curr_counter;
-        double dt_ms = (double)delta_counter / (counter_freq / 1000.0);
+        double dt_ms = (double)(1000.0 * delta_counter) / counter_freq;
         frame_ms += dt_ms;
-        //printf("dt: %f ms\n", dt_ms);
 
         // Input
         while (SDL_PollEvent(&e)) {
@@ -543,16 +542,7 @@ int main(int argc, char **argv)
         }
 
         // Update
-        //if ((gb.inst_executed % 100000) == 0) {
-        //if (gb.inst_executed == 9940000) {
-        //    fprintf(stderr, "Inst Count: %lu\n", gb.inst_executed);
-        //    getchar();
-        //    exit(1);
-        //}
-        for (int i = 0; i < 1; i++) {
-            gb_tick(&gb, dt_ms);
-        }
-        //continue;
+        gb_tick(&gb, dt_ms);
 
         // Render
         if (frame_ms > 16.0) {
