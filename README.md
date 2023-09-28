@@ -25,8 +25,8 @@ $ ./gb <path to ROM>
 [Awesome GameBoy Development](https://github.com/gbdev/awesome-gbdev) \
 [Gameboy-logs](https://github.com/wheremyfoodat/Gameboy-logs) \
 [Cheezball Rising: A new Game Boy Color game](https://eev.ee/everything/tags/cheezball-rising/) \
-[GBDK](https://github.com/gbdk-2020/gbdk-2020)
-[Mooneye Test Suite](https://github.com/Gekkio/mooneye-test-suite)
+[GBDK](https://github.com/gbdk-2020/gbdk-2020) \
+[Mooneye Test Suite](https://github.com/Gekkio/mooneye-test-suite) \
 [Game Boy: Complete Technical Reference](https://github.com/Gekkio/gb-ctr)
 
 ## License
