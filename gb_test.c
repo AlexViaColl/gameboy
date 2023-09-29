@@ -34,6 +34,23 @@
 
 //////////////////////////////////////////////////////////////////////
 
+void test_fetch_inst(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    for (int b = 0x00; b <= 0xFF; b++) {
+        if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
+            b == 0xEB || b == 0xEC || b == 0xED || b == 0xF4 || b == 0xFC || b == 0xFD)
+        {
+            continue;
+        }
+
+        gb.memory[0] = (uint8_t)b;
+        gb_fetch_inst(&gb);
+    }
+    test_end
+}
+
 void test_inst_nop(void)
 {
     test_begin
@@ -1315,6 +1332,79 @@ void test_time_inc_reg16(void)
     test_end
 }
 
+void test_time_jr_z(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0x28;
+    gb.memory[1] = 0x05;
+
+    // JP taken
+    gb_set_flag(&gb, Flag_Z, 1);
+    gb_tick(&gb, 2*MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 7);
+    
+    // JP not taken
+    gb.PC = 0;
+    gb_set_flag(&gb, Flag_Z, 0);
+    gb_tick(&gb, 2*MCYCLE_MS);
+    assert(gb.PC == 2);
+
+    test_end
+}
+
+void test_time_ret_z(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0xC8;
+
+    gb_tick(&gb, 0);
+    assert(false);
+
+    test_end
+}
+
+void test_time_jp_z(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0xCA;
+    gb.memory[1] = 0x34;
+    gb.memory[2] = 0x12;
+
+    // JP taken
+    gb_set_flag(&gb, Flag_Z, 1);
+    gb_tick(&gb, 3*MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0x1234);
+    
+    // JP not taken
+    gb.PC = 0;
+    gb_set_flag(&gb, Flag_Z, 0);
+    gb_tick(&gb, 3*MCYCLE_MS);
+    assert(gb.PC == 3);
+
+    test_end
+}
+
+void test_time_call_z(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0xCC;
+    gb.memory[1] = 0x34;
+    gb.memory[2] = 0x12;
+
+    gb_tick(&gb, 0);
+    assert(false);
+
+    test_end
+}
+
 #if 0
 #include <time.h>
 #include <sys/time.h>
@@ -1371,6 +1461,8 @@ void foo(void)
 
 int main(void)
 {
+    test_fetch_inst();
+
     test_inst_nop();
     //test_inst_stop(); printf("\n");
 
@@ -1524,6 +1616,12 @@ int main(void)
 
     test_time_nop();
     test_time_inc_reg16();
+
+    // Instructions with different timings
+    test_time_jr_z();   // 20, 28, 30, 38
+    //test_time_ret_z();  // C0, C8, D0, D8
+    test_time_jp_z();   // C2, CA, D2, DA
+    //test_time_call_z(); // C4, CC, D4, DC
 
     return 0;
 }

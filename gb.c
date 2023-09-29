@@ -7,31 +7,6 @@
 
 #include "gb.h"
 
-static const uint8_t NINTENDO_LOGO[] = {
-    0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
-    0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
-    0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
-};
-
-static const uint8_t BOOT_ROM[] = {
-    0x31, 0xfe, 0xff, 0xaf, 0x21, 0xff, 0x9f, 0x32, 0xcb, 0x7c, 0x20, 0xfb, 0x21, 0x26, 0xff, 0x0e,
-    0x11, 0x3e, 0x80, 0x32, 0xe2, 0x0c, 0x3e, 0xf3, 0xe2, 0x32, 0x3e, 0x77, 0x77, 0x3e, 0xfc, 0xe0,
-    0x47, 0x11, 0x04, 0x01, 0x21, 0x10, 0x80, 0x1a, 0xcd, 0x95, 0x00, 0xcd, 0x96, 0x00, 0x13, 0x7b,
-    0xfe, 0x34, 0x20, 0xf3, 0x11, 0xd8, 0x00, 0x06, 0x08, 0x1a, 0x13, 0x22, 0x23, 0x05, 0x20, 0xf9,
-    0x3e, 0x19, 0xea, 0x10, 0x99, 0x21, 0x2f, 0x99, 0x0e, 0x0c, 0x3d, 0x28, 0x08, 0x32, 0x0d, 0x20,
-    0xf9, 0x2e, 0x0f, 0x18, 0xf3, 0x67, 0x3e, 0x64, 0x57, 0xe0, 0x42, 0x3e, 0x91, 0xe0, 0x40, 0x04,
-    0x1e, 0x02, 0x0e, 0x0c, 0xf0, 0x44, 0xfe, 0x90, 0x20, 0xfa, 0x0d, 0x20, 0xf7, 0x1d, 0x20, 0xf2,
-    0x0e, 0x13, 0x24, 0x7c, 0x1e, 0x83, 0xfe, 0x62, 0x28, 0x06, 0x1e, 0xc1, 0xfe, 0x64, 0x20, 0x06,
-    0x7b, 0xe2, 0x0c, 0x3e, 0x87, 0xe2, 0xf0, 0x42, 0x90, 0xe0, 0x42, 0x15, 0x20, 0xd2, 0x05, 0x20,
-    0x4f, 0x16, 0x20, 0x18, 0xcb, 0x4f, 0x06, 0x04, 0xc5, 0xcb, 0x11, 0x17, 0xc1, 0xcb, 0x11, 0x17,
-    0x05, 0x20, 0xf5, 0x22, 0x23, 0x22, 0x23, 0xc9, 0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b,
-    0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d, 0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e,
-    0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99, 0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc,
-    0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e, 0x3c, 0x42, 0xb9, 0xa5, 0xb9, 0xa5, 0x42, 0x3c,
-    0x21, 0x04, 0x01, 0x11, 0xa8, 0x00, 0x1a, 0x13, 0xbe, 0x20, 0xfe, 0x23, 0x7d, 0xfe, 0x34, 0x20,
-    0xf5, 0x06, 0x19, 0x78, 0x86, 0x23, 0x05, 0x20, 0xfb, 0x86, 0x20, 0xfe, 0x3e, 0x01, 0xe0, 0x50,
-};
-
 // Debug Status
 static size_t bp_count = 0;
 #define MAX_BREAKPOINTS 16
@@ -197,16 +172,36 @@ void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
     }
 }
 
+static int gb_clock_freq(int clock)
+{
+    switch (clock & 3) {
+        case 0: return 4096;
+        case 1: return 262144;
+        case 2: return 65536;
+        case 3: return 16384;
+    }
+    assert(0 && "Unreachable");
+}
+
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
     // MBC1
     if (gb->cart_type == 1) {
         if (addr <= 0x1FFF) {
-            fprintf(stderr, "RAM Enable\n");
+            if ((value & 0xF) == 0xA) {
+                fprintf(stderr, "RAM Enable\n");
+                gb->ram_enabled = true;
+                assert(0);
+            } else {
+                fprintf(stderr, "RAM Disable\n");
+                gb->ram_enabled = false;
+            }
         } else if (addr <= 0x3FFF) {
-            fprintf(stderr, "ROM Bank Number: %02X\n", value);
+            value = value & 0x1F;
             if (value == 0) value = 1;
+            fprintf(stderr, "ROM Bank Number: %02X\n", value);
             assert(value <= gb->rom_bank_count);
+            gb->rom_bank_num = value;
             memcpy(gb->memory+0x4000, gb->rom + value*0x4000, 0x4000);
         } else if (addr <= 0x5FFF) {
             fprintf(stderr, "RAM Bank Number\n");
@@ -231,17 +226,8 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         gb->memory[addr] = value;
         fprintf(stderr, "%04X: [TAC] = %02X", gb->PC, value);
         if (value & 0x04) {
-            fprintf(stderr, " Enable");
             uint8_t clock = value & 3;
-            if (clock == 0) {
-                fprintf(stderr, " 00 4096 Hz");
-            } else if (clock == 1) {
-                fprintf(stderr, " 01 262144 Hz");
-            } else if (clock == 2) {
-                fprintf(stderr, " 10 65536 Hz");
-            } else if (clock == 3) {
-                fprintf(stderr, " 11 16384 Hz");
-            }
+            fprintf(stderr, " Enable %02X %d Hz", clock, gb_clock_freq(clock));
         } else {
             fprintf(stderr, " Disable");
         }
@@ -310,19 +296,9 @@ void gb_set_flags(GameBoy *gb, int z, int n, int h, int c)
     if (c >= 0) gb_set_flag(gb, Flag_C, c);
 }
 
-void gb_set_zero_flag(GameBoy *gb)
+const char* gb_reg_to_str(Reg8 r8)
 {
-    gb_set_flag(gb, Flag_Z, 1);
-}
-
-uint8_t gb_get_zero_flag(GameBoy *gb)
-{
-    return (gb->AF & 0x0080) == 0 ? 0 : 1;
-}
-
-const char* gb_reg_to_str(Reg8 r)
-{
-    switch (r) {
+    switch (r8) {
         case REG_B: return "B";
         case REG_C: return "C";
         case REG_D: return "D";
@@ -335,9 +311,9 @@ const char* gb_reg_to_str(Reg8 r)
     }
 }
 
-const char* gb_reg16_to_str(Reg16 r)
+const char* gb_reg16_to_str(Reg16 r16)
 {
-    switch (r) {
+    switch (r16) {
         case REG_BC: return "BC";
         case REG_DE: return "DE";
         case REG_HL: return "HL";
@@ -359,10 +335,10 @@ const char* gb_flag_to_str(Flag f)
     }
 }
 
-void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value)
+void gb_set_reg(GameBoy *gb, Reg8 r8, uint8_t value)
 {
-    // reg (0-7): B, C, D, E, H, L, (HL), A
-    switch (reg) {
+    // r8 (0-7): B, C, D, E, H, L, (HL), A
+    switch (r8) {
         case REG_B/*0*/:
             gb->BC &= 0x00ff;
             gb->BC |= (value << 8);
@@ -399,10 +375,10 @@ void gb_set_reg(GameBoy *gb, Reg8 reg, uint8_t value)
     }
 }
 
-uint8_t gb_get_reg(const GameBoy *gb, Reg8 reg)
+uint8_t gb_get_reg(const GameBoy *gb, Reg8 r8)
 {
-    // reg (0-7): B, C, D, E, H, L, (HL), A
-    switch (reg) {
+    // r8 (0-7): B, C, D, E, H, L, (HL), A
+    switch (r8) {
         case REG_B/*0*/:
             return (gb->BC >> 8);
         case REG_C/*1*/:
@@ -424,9 +400,9 @@ uint8_t gb_get_reg(const GameBoy *gb, Reg8 reg)
     }
 }
 
-void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value)
+void gb_set_reg16(GameBoy *gb, Reg16 r16, uint16_t value)
 {
-    switch (reg) {
+    switch (r16) {
         case REG_BC:
             gb->BC = value;
             break;
@@ -444,9 +420,9 @@ void gb_set_reg16(GameBoy *gb, Reg16 reg, uint16_t value)
     }
 }
 
-uint16_t gb_get_reg16(const GameBoy *gb, Reg16 reg)
+uint16_t gb_get_reg16(const GameBoy *gb, Reg16 r16)
 {
-    switch (reg) {
+    switch (r16) {
         case REG_BC: return gb->BC;
         case REG_DE: return gb->DE;
         case REG_HL: return gb->HL;
@@ -508,86 +484,91 @@ Inst gb_fetch_inst(const GameBoy *gb)
         exit(1);
     }
 
-    // TODO: Use a Table-driven approach to determine instruction size!!!
     // 1-byte instructions
     if (b == 0x00 || b == 0x10 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, STOP, HALT, DI, EI
-        return (Inst){.data = data, .size = 1, .cycles = 4};
+        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 4) { // INC reg8: 00|xxx|100
-        return (Inst){.data = data, .size = 1, .cycles = 4};
+        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 5) { // DEC reg8: 00|xxx|101
-        return (Inst){.data = data, .size = 1, .cycles = 4};
+        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 7) { // RLCA|RRCA|RLA|RRA|DAA|CPL|SCF|CCF: 00|xxx|111
-        return (Inst){.data = data, .size = 1, .cycles = 4};
+        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 3) { // INC reg16|DEC reg16: 00|xxx|011
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 2) { // LD (reg16),A|LD A,(reg16): 00|xxx|010
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b >= 0x40 && b <= 0x7F) {
-        return (Inst){.data = data, .size = 1}; // TODO: cycles
+        bool is_ld_r8_hl = (b >> 6) == 1 && (b & 7) == 6;
+        bool is_ld_hl_r8 = b >= 0x70 && b <= 0x77;
+        bool is_ld_hl = is_ld_r8_hl || is_ld_hl_r8;
+        uint8_t cycles = is_ld_hl ? 8 : 4;
+        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b >= 0x80 && b <= 0xBF) {
-        return (Inst){.data = data, .size = 1}; // TODO: cycles
+        bool reads_hl = (b >> 6) == 2 && (b & 7) == 6;
+        uint8_t cycles = reads_hl ? 8 : 4;
+        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-        return (Inst){.data = data, .size = 1};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 20};
     } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) { // POP reg16: 11|xx|0001
-        return (Inst){.data = data, .size = 1, .cycles = 12};
+        return (Inst){.data = data, .size = 1, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) { // PUSH reg16: 11|xx|0101
-        return (Inst){.data = data, .size = 1, .cycles = 16};
+        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if ((b >> 6) == 3 && (b & 7) == 7) { // RST xx: 11|xxx|111
-        return (Inst){.data = data, .size = 1, .cycles = 16};
+        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xC9 || b == 0xD9) { // RET|RETI
-        return (Inst){.data = data, .size = 1, .cycles = 16};
+        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xE2 || b == 0xF2) { // LD (C),A|LD A,(C)
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0xE9) { // JP (HL)
-        return (Inst){.data = data, .size = 1, .cycles = 4};
+        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if (b == 0xF9) { // LD SP,HL
-        return (Inst){.data = data, .size = 1, .cycles = 8};
+        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
     }
 
     // 2-byte instructions
     else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         uint8_t cycles = b == 0x36 ? 12 : 8;
-        return (Inst){.data = data, .size = 2, .cycles = cycles};
+        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b == 0x18) { // JR r8
-        return (Inst){.data = data, .size = 2, .cycles = 12};
-    } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
-        return (Inst){.data = data, .size = 2}; // TODO: cycles
+        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+    } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) { // JR NZ|NC|Z|C,r8
+        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 12};
     } else if ((b >> 6) == 3 && (b & 7) == 6) { // ADD|ADC|SUB|SBC|AND|XOR|OR|CP d8: 11|xxx|110
-        return (Inst){.data = data, .size = 2, .cycles = 8};
+        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0xE0 || b == 0xF0) { // LDH (a8),A|LDH A,(a8)
-        return (Inst){.data = data, .size = 2, .cycles = 12};
+        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0xE8) { // ADD SP,r8
-        return (Inst){.data = data, .size = 2, .cycles = 16};
+        return (Inst){.data = data, .size = 2, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xF8) { // LD HL,SP+r8
-        return (Inst){.data = data, .size = 2, .cycles = 12};
+        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
     }
 
     // Prefix CB
     else if (b == 0xCB) {
         uint8_t b2 = gb_read_memory(gb, gb->PC+1);
         uint8_t cycles = (b2 & 7) == 6 ? 16 : 8;
-        return (Inst){.data = data, .size = 2, .cycles = cycles};
+        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     }
 
     // 3-byte instructions
     else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) { // LD r16,d16
-        return (Inst){.data = data, .size = 3, .cycles = 12};
+        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0x08) { // LD (a16),SP
-        return (Inst){.data = data, .size = 3, .cycles = 20};
+        return (Inst){.data = data, .size = 3, .min_cycles = 20, .max_cycles = 20};
     } else if (b == 0xC3) { // JP a16
-        return (Inst){.data = data, .size = 3, .cycles = 16};
+        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-        return (Inst){.data = data, .size = 3}; // TODO: cycles
+        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 24};
     } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-        return (Inst){.data = data, .size = 3}; // TODO: cycles
+        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 16};
     } else if (b == 0xCD) { // CALL a16
-        return (Inst){.data = data, .size = 3, .cycles = 24};
+        return (Inst){.data = data, .size = 3, .min_cycles = 24, .max_cycles = 24};
     } else if (b == 0xEA || b == 0xFA) { // LD (a16),A|LD A,(a16)
-        return (Inst){.data = data, .size = 3, .cycles = 16};
+        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
     }
 
     printf("%02X\n", b);
@@ -603,20 +584,20 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
         } else if (b == 0x10) {
             snprintf(buf, size, "STOP");
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
-            Reg16 src = (b >> 4) & 0x3;
-            snprintf(buf, size, "ADD HL,%s", gb_reg16_to_str(src));
-        } else if ( // INC reg
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "ADD HL,%s", gb_reg16_to_str(r16));
+        } else if (
             b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
             b == 0x0C || b == 0x1C || b == 0x2C || b == 0x3C
         ) {
-            Reg8 reg = (b >> 3) & 0x7;
-            snprintf(buf, size, "INC %s", gb_reg_to_str(reg));
-        } else if ( // DEC reg
+            Reg8 r8 = (b >> 3) & 7;
+            snprintf(buf, size, "INC %s", gb_reg_to_str(r8));
+        } else if (
             b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
             b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
         ) {
-            Reg8 reg = (b >> 3) & 0x7;
-            snprintf(buf, size, "DEC %s", gb_reg_to_str(reg));
+            Reg8 r8 = (b >> 3) & 7;
+            snprintf(buf, size, "DEC %s", gb_reg_to_str(r8));
         } else if (b == 0x07) {
             snprintf(buf, size, "RLCA");
         } else if (b == 0x0F) {
@@ -634,55 +615,55 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
         } else if (b == 0x3F) {
             snprintf(buf, size, "CCF");
         } else if (b == 0x0A || b == 0x1A) {
-            Reg16 reg = (b >> 4) & 0x3;
-            snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(reg));
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(r16));
         } else if (b == 0x02 || b == 0x12) {
-            Reg16 reg = (b >> 4) & 0x3;
-            snprintf(buf, size, "LD (%s),A", gb_reg16_to_str(reg));
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "LD (%s),A", gb_reg16_to_str(r16));
         } else if (b == 0x22 || b == 0x32) {
             snprintf(buf, size, "LD (HL%c),A", b == 0x22 ? '+' : '-');
         } else if (b == 0x0A || b == 0x1A) {
-            Reg16 reg = (b >> 4) & 0x3;
-            snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(reg));
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(r16));
         } else if (b == 0x2A || b == 0x3A) {
             snprintf(buf, size, "LD A,(HL%c)", b == 0x2A ? '+' : '-');
         } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
-            Reg16 reg = (b >> 4) & 0x3;
-            snprintf(buf, size, "INC %s", gb_reg16_to_str(reg));
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "INC %s", gb_reg16_to_str(r16));
         } else if (b == 0x0B || b == 0x1B || b == 0x2B || b == 0x3B) {
-            Reg16 reg = (b >> 4) & 0x3;
-            snprintf(buf, size, "DEC %s", gb_reg16_to_str(reg));
+            Reg16 r16 = (b >> 4) & 0x3;
+            snprintf(buf, size, "DEC %s", gb_reg16_to_str(r16));
         } else if (b >= 0x40 && b <= 0x7F) {
             if (b == 0x76) {
                 snprintf(buf, size, "HALT");
             }
-            Reg8 src = b & 0x7;
+            Reg8 src = b & 7;
             Reg8 dst = (b >> 3) & 0x7;
             snprintf(buf, size, "LD %s,%s", gb_reg_to_str(dst), gb_reg_to_str(src));
         } else if (b >= 0x80 && b <= 0x87) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "ADD A,%s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "ADD A,%s", gb_reg_to_str(r8));
         } else if (b >= 0x88 && b <= 0x8F) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "ADC A,%s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "ADC A,%s", gb_reg_to_str(r8));
         } else if (b >= 0x90 && b <= 0x97) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "SUB A,%s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "SUB A,%s", gb_reg_to_str(r8));
         } else if (b >= 0x98 && b <= 0x9F) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "SBC A,%s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "SBC A,%s", gb_reg_to_str(r8));
         } else if (b >= 0xB0 && b <= 0xB7) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "OR %s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "OR %s", gb_reg_to_str(r8));
         } else if (b >= 0xB8 && b <= 0xBF) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "CP %s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "CP %s", gb_reg_to_str(r8));
         } else if (b >= 0xA0 && b <= 0xA7) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "AND %s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "AND %s", gb_reg_to_str(r8));
         } else if (b >= 0xA8 && b <= 0xAF) {
-            Reg8 reg = b & 0x7;
-            snprintf(buf, size, "XOR %s", gb_reg_to_str(reg));
+            Reg8 r8 = b & 7;
+            snprintf(buf, size, "XOR %s", gb_reg_to_str(r8));
         } else if (b == 0xE2) {
             snprintf(buf, size, "LD (C),A");
         } else if (b == 0xF2) {
@@ -722,44 +703,45 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     }
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
+        uint8_t b2 = inst.data[1];
         if (b == 0x18) {
-            int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
+            int r8 = b2 >= 0x80 ? (int8_t)b2 : b2;
             snprintf(buf, size, "JR %d", r8);
         } else if ( // LD reg,d8
             b == 0x06 || b == 0x16 || b == 0x26 || b == 0x36 ||
             b == 0x0E || b == 0x1E || b == 0x2E || b == 0x3E
         ) {
             Reg8 reg = (b >> 3) & 0x7;
-            snprintf(buf, size, "LD %s,0x%02X", gb_reg_to_str(reg), inst.data[1]);
+            snprintf(buf, size, "LD %s,0x%02X", gb_reg_to_str(reg), b2);
         } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
             Flag f = (b >> 3) & 0x3;
-            snprintf(buf, size, "JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
+            snprintf(buf, size, "JR %s,0x%02X", gb_flag_to_str(f), b2);
         } else if (b == 0x20) {
-            snprintf(buf, size, "JR NZ,0x%02X", inst.data[1]);
+            snprintf(buf, size, "JR NZ,0x%02X", b2);
         } else if (b == 0xE0) {
-            snprintf(buf, size, "LDH (FF00+%02X),A", inst.data[1]);
+            snprintf(buf, size, "LDH (FF00+%02X),A", b2);
         } else if (b == 0xC6) {
-            snprintf(buf, size, "ADD A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "ADD A,0x%02X", b2);
         } else if (b == 0xCE) {
-            snprintf(buf, size, "ADC A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "ADC A,0x%02X", b2);
         } else if (b == 0xD6) {
-            snprintf(buf, size, "SUB A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "SUB A,0x%02X", b2);
         } else if (b == 0xDE) {
-            snprintf(buf, size, "SBC A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "SBC A,0x%02X", b2);
         } else if (b == 0xE6) {
-            snprintf(buf, size, "AND A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "AND A,0x%02X", b2);
         } else if (b == 0xE8) {
-            snprintf(buf, size, "ADD SP,0x%02X", inst.data[1]);
+            snprintf(buf, size, "ADD SP,0x%02X", b2);
         } else if (b == 0xF0) {
-            snprintf(buf, size, "LDH A,(FF00+%02X)", inst.data[1]);
+            snprintf(buf, size, "LDH A,(FF00+%02X)", b2);
         } else if (b == 0xF6) {
-            snprintf(buf, size, "OR A,0x%02X", inst.data[1]);
+            snprintf(buf, size, "OR A,0x%02X", b2);
         } else if (b == 0xF8) {
-            snprintf(buf, size, "LD HL,SP+%d", (int8_t)inst.data[1]);
+            snprintf(buf, size, "LD HL,SP+%d", (int8_t)b2);
         } else if (b == 0xEE) {
-            snprintf(buf, size, "XOR 0x%02X", inst.data[1]);
+            snprintf(buf, size, "XOR 0x%02X", b2);
         } else if (b == 0xFE) {
-            snprintf(buf, size, "CP 0x%02X", inst.data[1]);
+            snprintf(buf, size, "CP 0x%02X", b2);
         } else {
             assert(0 && "Instruction not implemented");
         }
@@ -767,42 +749,31 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
 
     // Prefix CB
     else if (inst.size == 2 && inst.data[0] == 0xCB) {
-        if (inst.data[1] <= 0x07) {
-            Reg8 reg = inst.data[1] & 0x7;
+        uint8_t b2 = inst.data[1];
+        Reg8 reg = b2 & 7;
+        uint8_t bit = (b2 >> 3) & 7;
+        if (b2 <= 0x07) {
             snprintf(buf, size, "RLC %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x08 && b2 <= 0x0F) {
             snprintf(buf, size, "RRC %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x10 && inst.data[1] <= 0x17) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x10 && b2 <= 0x17) {
             snprintf(buf, size, "RL %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x18 && b2 <= 0x1F) {
             snprintf(buf, size, "RR %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x20 && inst.data[1] <= 0x27) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x20 && b2 <= 0x27) {
             snprintf(buf, size, "SLA %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x28 && inst.data[1] <= 0x2F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x28 && b2 <= 0x2F) {
             snprintf(buf, size, "SRA %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x30 && b2 <= 0x37) {
             snprintf(buf, size, "SWAP %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (b2 >= 0x38 && b2 <= 0x3F) {
             snprintf(buf, size, "SRL %s", gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x40 && inst.data[1] <= 0x7F) {
-            uint8_t b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
-            snprintf(buf, size, "BIT %d,%s", b, gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xBF) {
-            uint8_t b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
-            snprintf(buf, size, "RES %d,%s", b, gb_reg_to_str(reg));
-        } else if (inst.data[1] >= 0xC0) {
-            uint8_t b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
-            snprintf(buf, size, "SET %d,%s", b, gb_reg_to_str(reg));
+        } else if (b2 >= 0x40 && b2 <= 0x7F) {
+            snprintf(buf, size, "BIT %d,%s", bit, gb_reg_to_str(reg));
+        } else if (b2 >= 0x80 && b2 <= 0xBF) {
+            snprintf(buf, size, "RES %d,%s", bit, gb_reg_to_str(reg));
+        } else if (b2 >= 0xC0) {
+            snprintf(buf, size, "SET %d,%s", bit, gb_reg_to_str(reg));
         } else {
             assert(0 && "Instruction not implemented");
         }
@@ -811,6 +782,7 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     // 3-byte instructions
     else if (inst.size == 3) {
         uint16_t n = inst.data[1] | (inst.data[2] << 8);
+        Flag f = (b >> 3) & 3;
         if (b == 0xC3) {
             snprintf(buf, size, "JP 0x%04X", n);
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
@@ -819,10 +791,8 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
         } else if (b == 0x08) {
             snprintf(buf, size, "LD (0x%04X),SP", n);
         } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-            Flag f = (b >> 3) & 0x3;
             snprintf(buf, size, "JP %s,0x%04X", gb_flag_to_str(f), n);
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-            Flag f = (b >> 3) & 0x3;
             snprintf(buf, size, "CALL %s,0x%04X", gb_flag_to_str(f), n);
         } else if (b == 0xCD) {
             snprintf(buf, size, "CALL 0x%04X", n);
@@ -1272,18 +1242,21 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
             }
             if (gb_get_flag(gb, f)) {
-                int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-                if (offset == -2 && !infinite_loop) {
-                    infinite_loop = true;
-                    printf("Detected infinite loop...\n");
+                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
+                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
+                    int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
+                    if (offset == -2 && !infinite_loop) {
+                        infinite_loop = true;
+                        printf("Detected infinite loop...\n");
+                    }
+                    gb->PC = (gb->PC + inst.size) + offset;
                 }
-                gb->PC = (gb->PC + inst.size) + offset;
             } else {
                 gb->PC += inst.size;
             }
         } else if (b == 0x20) {
             gb_log_inst("JR NZ,0x%02X", inst.data[1]);
-            if (!gb_get_zero_flag(gb)) {
+            if (!gb_get_flag(gb, Flag_Z)) {
                 int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
                 gb->PC = (gb->PC + inst.size) + offset;
             } else {
@@ -1512,9 +1485,13 @@ void gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                gb->PC = n;
+                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
+                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
+                    gb->PC = n;
+                }
             } else {
                 gb->PC += inst.size;
+                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
             Flag f = (b >> 3) & 0x3;
@@ -1758,16 +1735,18 @@ void gb_tick(GameBoy *gb, double dt_ms)
     gb->timer_ly += dt_ms;
 
     gb->timer_mcycle += dt_ms;
-    if (gb->timer_mcycle < MCYCLE_MS) {
+    Inst inst = gb_fetch_inst(gb);
+    if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
         return;
     }
-    gb->timer_mcycle -= MCYCLE_MS;
 
+    if (inst.min_cycles == inst.max_cycles) {
+        gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+    }
 
     if (!gb->step_debug || gb->next_inst) {
         if (gb->next_inst) gb->next_inst = false;
 
-        Inst inst = gb_fetch_inst(gb);
         gb_exec(gb, inst);
 
         if (gb->timer_ly > 0.1089) {
@@ -1798,21 +1777,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
     // Timer Enabled in TAC
     if (gb->memory[rTAC] & 0x04) {
         // Update TIMA (timer counter)
-        int freq;
-        switch (gb->memory[rTAC] & 0x03) {
-            case 0:
-                freq = 4096;
-                break;
-            case 1:
-                freq = 262144;
-                break;
-            case 2:
-                freq = 65536;
-                break;
-            case 3:
-                freq = 16384;
-                break;
-        }
+        int freq = gb_clock_freq(gb->memory[rTAC] & 3);
         if (gb->timer_tima <= 0) {
             gb->memory[rTIMA] += 1;
             gb->timer_tima += 1000.0 / freq; 
