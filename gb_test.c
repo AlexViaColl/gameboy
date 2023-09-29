@@ -1328,6 +1328,25 @@ void test_time_inc_reg16(void)
     assert(gb.PC == 0);
     gb_tick(&gb, MCYCLE_MS);
     assert(gb.PC == 1);
+    test_end
+}
+
+void test_time_add_a_mem_hl(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[0] = 0x86;
+
+    Inst inst = gb_fetch_inst(&gb);
+    assert(inst.min_cycles == 8);
+    assert(inst.max_cycles == 8);
+
+    gb_tick(&gb, 0);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 1);
 
     test_end
 }
@@ -1360,9 +1379,25 @@ void test_time_ret_z(void)
     test_begin
     GameBoy gb = {0};
     gb.memory[0] = 0xC8;
+    gb.SP = 0xD000;
+    gb.memory[gb.SP+0] = 0x34;
+    gb.memory[gb.SP+1] = 0x12;
 
-    gb_tick(&gb, 0);
-    assert(false);
+    // RET taken
+    gb_set_flag(&gb, Flag_Z, 1);
+    gb_tick(&gb, 4*MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0x1234);
+
+    // RET not taken
+    gb.PC = 0;
+    gb.SP = 0xD000;
+    gb_set_flag(&gb, Flag_Z, 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 1);
 
     test_end
 }
@@ -1399,8 +1434,93 @@ void test_time_call_z(void)
     gb.memory[1] = 0x34;
     gb.memory[2] = 0x12;
 
+    // CALL taken
+    gb_set_flag(&gb, Flag_Z, 1);
+    gb_tick(&gb, 5*MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 0x1234);
+
+    // CALL not taken
+    gb.PC = 0;
+    gb_set_flag(&gb, Flag_Z, 0);
+    gb_tick(&gb, 2*MCYCLE_MS);
+    assert(gb.PC == 0);
+    gb_tick(&gb, MCYCLE_MS);
+    assert(gb.PC == 3);
+
+    test_end
+}
+
+void test_div_write_reset(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[rDIV/*FF04*/] = 0x69;
+
+    gb_write_memory(&gb, rDIV/*FF04*/, 1);
+
+    assert(gb.memory[rDIV/*FF04*/] == 0);
+    test_end
+}
+
+void test_div_inc_rate(void)
+{
+    test_begin
+    GameBoy gb = {0};
+
     gb_tick(&gb, 0);
-    assert(false);
+    assert(gb.memory[rDIV] == 0);
+
+    gb_tick(&gb, 1000.0 / 16384);
+    assert(gb.memory[rDIV] == 1);
+
+    gb_tick(&gb, 10 * (1000.0 / 16384));
+    assert(gb.memory[rDIV] == 11);
+
+    test_end
+}
+
+void test_tima_inc_rate_of_tac(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+
+    gb.memory[rTIMA] = 0;
+    gb.memory[rTAC] |= 0; // 4096 Hz
+    gb_tick(&gb, 1000.0 / 4096);
+    assert(gb.memory[rTIMA] == 1);
+
+    gb.memory[rTIMA] = 0;
+    gb.memory[rTAC] |= 1; // 262144 Hz
+    gb_tick(&gb, 1000.0 / 262144);
+    assert(gb.memory[rTIMA] == 1);
+
+    gb.memory[rTIMA] = 0;
+    gb.memory[rTAC] |= 2; // 65536 Hz
+    gb_tick(&gb, 1000.0 / 65536);
+    assert(gb.memory[rTIMA] == 1);
+
+    gb.memory[rTIMA] = 0;
+    gb.memory[rTAC] |= 3; // 16384 Hz
+    gb_tick(&gb, 1000.0 / 16384);
+    assert(gb.memory[rTIMA] == 1);
+
+    test_end
+}
+
+void test_tima_interrupt_on_overflow(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+
+    gb.memory[rTIMA] = 0xFF;
+    gb.memory[rTAC] |= 0; // 4096 Hz
+    gb_tick(&gb, 1000.0 / 4096);
+    assert(gb.memory[rTIMA] == 0);
+    assert(gb.memory[rIF] & 0x04);
 
     test_end
 }
@@ -1616,12 +1736,19 @@ int main(void)
 
     test_time_nop();
     test_time_inc_reg16();
+    test_time_add_a_mem_hl();
 
     // Instructions with different timings
     test_time_jr_z();   // 20, 28, 30, 38
-    //test_time_ret_z();  // C0, C8, D0, D8
+    test_time_ret_z();  // C0, C8, D0, D8
     test_time_jp_z();   // C2, CA, D2, DA
-    //test_time_call_z(); // C4, CC, D4, DC
+    test_time_call_z(); // C4, CC, D4, DC
+
+    test_div_write_reset();
+    test_div_inc_rate();
+
+    test_tima_inc_rate_of_tac();
+    test_tima_interrupt_on_overflow();
 
     return 0;
 }

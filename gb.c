@@ -214,7 +214,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         //gb->memory[addr] = value;
         gb_write_joypad_input(gb, value);
     } else if (addr == rDIV/*0xFF04*/) {
-        gb->memory[addr] = value;
+        gb->memory[addr] = 0;
         fprintf(stderr, "%04X: [DIV] = %02X\n", gb->PC, value);
     } else if (addr == rTIMA/*0xFF05*/) {
         gb->memory[addr] = value;
@@ -1139,10 +1139,14 @@ void gb_exec(GameBoy *gb, Inst inst)
             uint16_t addr = (high << 8) | low;
             gb_log_inst("RET %s", gb_flag_to_str(f));
             if (gb_get_flag(gb, f)) {
-                gb->SP += 2;
-                gb->PC = addr;
+                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
+                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
+                    gb->SP += 2;
+                    gb->PC = addr;
+                }
             } else {
                 gb->PC += inst.size;
+                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC9) {
             uint8_t low = gb_read_memory(gb, gb->SP + 0);
@@ -1253,6 +1257,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 }
             } else {
                 gb->PC += inst.size;
+                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0x20) {
             gb_log_inst("JR NZ,0x%02X", inst.data[1]);
@@ -1497,12 +1502,16 @@ void gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("CALL %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                gb->SP -= 2;
-                uint16_t ret_addr = gb->PC + inst.size;
-                gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
-                gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
-                gb->PC = n;
+                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
+                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
+                    gb->SP -= 2;
+                    uint16_t ret_addr = gb->PC + inst.size;
+                    gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
+                    gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+                    gb->PC = n;
+                }
             } else {
+                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
                 gb->PC += inst.size;
             }
         } else if (b == 0xCD) {
@@ -1736,6 +1745,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
 
     gb->timer_mcycle += dt_ms;
     Inst inst = gb_fetch_inst(gb);
+
     if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
         return;
     }
@@ -1769,7 +1779,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
     }
 
     // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
-    if (gb->timer_div <= 0) {
+    while (gb->timer_div < 0) {
         gb->memory[rDIV] += 1;
         gb->timer_div += 1000.0 / 16384;
     }
