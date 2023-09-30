@@ -7,7 +7,7 @@
 
 #include "gb.h"
 
-#define SCALE  5
+#define SCALE  8
 
 // RRGGBBAA
 #define HEX_TO_COLOR(x) (x >> 24)&0xff, (x >> 16)&0xff, (x >> 8)&0xff, (x)&0xff
