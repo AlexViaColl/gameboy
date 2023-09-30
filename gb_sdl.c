@@ -406,7 +406,7 @@ void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
             uint16_t px_row = (row+scy) % 256;
             for (int col = 0; col < 160; col++) {
                 uint16_t px_col = (col+scx) % 256;
-                uint8_t color = gb->display[(px_row)*256 + (px_col)];
+                uint8_t color = gb->display[px_row*256 + px_col];
                 SDL_SetRenderDrawColor(renderer, color, color, color, 255);
                 SDL_Rect r = {
                     x+col*pixel_dim, y+row*pixel_dim,
@@ -501,7 +501,36 @@ int main(int argc, char **argv)
                     }
                     break;
                 case SDLK_SPACE:
-                    if (e.key.type == SDL_KEYDOWN) gb_dump(&gb);
+                    if (e.key.type == SDL_KEYDOWN) {
+                        gb_dump(&gb);
+                        printf("BG tilemap $9800-$9BFF:\n");
+                        for (int row = 0; row < 32; row++) {
+                            for (int col = 0; col < 32; col++) {
+                                printf("%02X ", gb.memory[0x9800 + row*32 + col]);
+                            }
+                            printf("\n");
+                        }
+                        printf("\n");
+
+                        printf("BG tilemap $9C00-$9FFF:\n");
+                        for (int row = 0; row < 32; row++) {
+                            for (int col = 0; col < 32; col++) {
+                                printf("%02X ", gb.memory[0x9C00 + row*32 + col]);
+                            }
+                            printf("\n");
+                        }
+                        printf("\n");
+
+                        printf("OAM $FE00-$FE9F:\n");
+                        for (int i = 0; i < 40; i++) {
+                            uint8_t y = gb.memory[_OAMRAM + i*4 + 0] - 16;
+                            uint8_t x = gb.memory[_OAMRAM + i*4 + 1] - 8;
+                            uint8_t tile_idx = gb.memory[_OAMRAM + i*4 + 2];
+                            uint8_t attribs = gb.memory[_OAMRAM + i*4 + 3];
+                            printf("X: %d, Y: %d, Tile: %d (%02X), Attrib: %02X\n",
+                                x, y, tile_idx, tile_idx, attribs);
+                        }
+                    }
                     break;
                 case SDLK_s:
                     gb.button_a = e.key.type == SDL_KEYDOWN ? 1 : 0;

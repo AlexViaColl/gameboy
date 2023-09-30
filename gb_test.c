@@ -1525,6 +1525,40 @@ void test_tima_interrupt_on_overflow(void)
     test_end
 }
 
+void test_render_lcd_off(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb_render(&gb);
+    for (size_t i = 0; i < SCRN_VX*SCRN_VY; i++) {
+        assert(gb.display[i] == 0x00);
+    }
+    test_end
+}
+
+void test_render_lcd_on_bg_on(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[rLCDC] = 0x81; // LCDCF_ON | LCDCF_BGON
+    // Tilemap
+    //for (size_t i = 0; i < 32*32; i++) {
+    //    gb.memory[0x9800+i] = 0x01;
+    //}
+    // Tiles
+    //for (size_t i = 0; i < 8*8; i++) {
+    //    gb.memory[0x8800+i] = 0xFF;
+    //}
+    gb.memory[0x9800] = 0x80;
+    for (size_t i = 0; i < 8*8; i++) gb.memory[0x8800+i] = 0xFF;
+
+    gb_render(&gb);
+    for (size_t i = 0; i < SCRN_VX*SCRN_VY; i++) {
+        assert(gb.display[i] == 0xFF);
+    }
+    test_end
+}
+
 #if 0
 #include <time.h>
 #include <sys/time.h>
@@ -1749,6 +1783,9 @@ int main(void)
 
     test_tima_inc_rate_of_tac();
     test_tima_interrupt_on_overflow();
+
+    test_render_lcd_off();
+    test_render_lcd_on_bg_on();
 
     return 0;
 }

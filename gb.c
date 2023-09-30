@@ -246,6 +246,12 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         gb->memory[addr] = value;
         //printf("[%s] = %d\n", addr == rSCY ? "rSCY" : "rSCX", value);
         //assert(value == 0 || 0);
+    } else if (addr == rDMA/*0xFF46*/) {
+        assert(value <= 0xDF);
+        uint16_t src = value << 8;
+        uint16_t dst = 0xFE00;
+        memcpy(gb->memory + dst, gb->memory + src, 0x9F);
+        gb->memory[addr] = value;
     } else {
         gb->memory[addr] = value;
     }
@@ -1564,10 +1570,11 @@ static void fill_solid_tile(GameBoy *gb, int x, int y, uint8_t color)
 //    0xFE, 0xFE, 0x7C, 0x7C, 0x38, 0x38, 0x10, 0x10,
 //};
 //fill_tile(gb, 0, 0, tile);
-static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparency)
+static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparency, uint8_t plt)
 {
     // tile is 16 bytes
-    uint8_t bgp = gb->memory[rBGP];
+    //uint8_t bgp = gb->memory[rBGP];
+    uint8_t bgp = plt;
     uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
     uint8_t bgp_tbl[] = {(bgp >> 0) & 3, (bgp >> 2) & 3, (bgp >> 4) & 3, (bgp >> 6) & 3};
     for (int row = 0; row < 8; row++) {
@@ -1606,9 +1613,10 @@ void gb_render(GameBoy *gb)
         for (int row = 0; row < SCRN_VY_B; row++) {
             for (int col = 0; col < SCRN_VX_B; col++) {
                 int tile_idx = gb->memory[bg_tm_off + row*32 + col];
+                if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
                 //fill_solid_tile(gb, col*8, row*8, 0xff);
                 uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
-                fill_tile(gb, col*8, row*8, tile, false);
+                fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
             }
         }
     }
@@ -1626,13 +1634,18 @@ void gb_render(GameBoy *gb)
             uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
             uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
             uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
-            //uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
+            uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
+            uint8_t bg_win_over = attribs >> 7;
+            uint8_t yflip = attribs >> 6;
+            uint8_t xflip = attribs >> 5;
+            uint8_t plt_idx = attribs >> 4;
+            // 0000 0000
 
             //x += gb->memory[rSCX];
             //y += gb->memory[rSCY];
 
             uint8_t *tile = gb->memory + _VRAM8000 + tile_idx*16;
-            fill_tile(gb, x, y, tile, true);
+            fill_tile(gb, x, y, tile, true, gb->memory[rOBP0+plt_idx]);
         }
     }
 }
