@@ -527,7 +527,7 @@ int main(int argc, char **argv)
                             uint8_t x = gb.memory[_OAMRAM + i*4 + 1] - 8;
                             uint8_t tile_idx = gb.memory[_OAMRAM + i*4 + 2];
                             uint8_t attribs = gb.memory[_OAMRAM + i*4 + 3];
-                            printf("X: %d, Y: %d, Tile: %d (%02X), Attrib: %02X\n",
+                            printf("X: %3d, Y: %3d, Tile: %3d (%02X), Attrib: %02X\n",
                                 x, y, tile_idx, tile_idx, attribs);
                         }
                     }

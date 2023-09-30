@@ -185,8 +185,14 @@ static int gb_clock_freq(int clock)
 
 void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
 {
+    // No MBC (32 KiB ROM only)
+    if (gb->cart_type == 0) {
+        if (addr <= 0x7FFF) return;
+        assert(addr >= 0x8000);
+    }
+
     // MBC1
-    if (gb->cart_type == 1) {
+    else if (gb->cart_type == 1) {
         if (addr <= 0x1FFF) {
             if ((value & 0xF) == 0xA) {
                 fprintf(stderr, "RAM Enable\n");
@@ -208,6 +214,10 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         } else if (addr <= 0x7FFF) {
             fprintf(stderr, "Banking Mode Select\n");
         }
+    }
+
+    else {
+        assert(0 && "MBC X is not supported yet!");
     }
 
     if (addr == rP1/*0xFF00*/) {
@@ -815,6 +825,8 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
+    assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80);
+
     uint8_t IE = gb->memory[rIE];
     uint8_t IF = gb->memory[rIF];
     if (gb->halted) {
@@ -1638,11 +1650,7 @@ void gb_render(GameBoy *gb)
             uint8_t bg_win_over = attribs >> 7;
             uint8_t yflip = attribs >> 6;
             uint8_t xflip = attribs >> 5;
-            uint8_t plt_idx = attribs >> 4;
-            // 0000 0000
-
-            //x += gb->memory[rSCX];
-            //y += gb->memory[rSCY];
+            uint8_t plt_idx = (attribs >> 4) & 1;
 
             uint8_t *tile = gb->memory + _VRAM8000 + tile_idx*16;
             fill_tile(gb, x, y, tile, true, gb->memory[rOBP0+plt_idx]);
