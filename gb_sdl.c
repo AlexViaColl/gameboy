@@ -356,9 +356,21 @@ static void render_debug_viewport(SDL_Renderer *renderer, int pixel_dim, int x, 
 {
     SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(DBG_VIEW));
     int thick = 5;
+
+    // bottom line
     SDL_Rect r = {x, y+HEIGHT*pixel_dim, WIDTH*pixel_dim+thick, thick};
     SDL_RenderFillRect(renderer, &r);
+
+    // right line
     r = (SDL_Rect){x+WIDTH*pixel_dim, y, thick, HEIGHT*pixel_dim};
+    SDL_RenderFillRect(renderer, &r);
+
+    // top line
+    r = (SDL_Rect){x, y, WIDTH*pixel_dim+thick, thick};
+    SDL_RenderFillRect(renderer, &r);
+
+    // left line
+    r = (SDL_Rect){x, y, thick, HEIGHT*pixel_dim};
     SDL_RenderFillRect(renderer, &r);
 }
 
@@ -380,7 +392,7 @@ void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
             }
         }
 
-        render_debug_viewport(renderer, pixel_dim, x, y);
+        render_debug_viewport(renderer, pixel_dim, x + gb->memory[rSCX]*pixel_dim, y);
         render_debug_tile_grid(renderer, pixel_dim, x, y);
     }
 }

@@ -7,6 +7,14 @@
 
 #include "gb.h"
 
+/*
+BACKLOG:
+[x] - Fix palette in Dr. Mario
+[ ] - STAT register does not reflect the mode (0, 1, 2, 3)
+[ ] - Implement Window rendering (Super Mario Land => Game Over screen)
+[ ] - Render by lines instead of the entire frame at once (SCX might change between lines!!!)
+*/
+
 // Debug Status
 static size_t bp_count = 0;
 #define MAX_BREAKPOINTS 16
@@ -1701,7 +1709,7 @@ static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparenc
             uint8_t color_idx = (bit1 << 1) | bit0; // 0-3
             uint8_t palette_idx = bgp_tbl[color_idx];
             uint8_t color = PALETTE[palette_idx];
-            if (!transparency || palette_idx != 0) {
+            if (!transparency || color_idx != 0) {
                 int r = (row+y) % 256;
                 int c = (col+x) % 256;
                 gb->display[r*256 + c] = color;
@@ -1796,11 +1804,12 @@ void gb_render(GameBoy *gb)
         for (int i = 0; i < OAM_COUNT; i++) {
             uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
             uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
+            uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
+            uint8_t attribs  = gb->memory[_OAMRAM + i*4 + 3];
+
             x = (x+scx) % 256;
             y = (y+scy) % 256;
 
-            uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
-            uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
             uint8_t bg_win_over = (attribs >> 7) & 1;
             uint8_t yflip = (attribs >> 6) & 1;
             uint8_t xflip = (attribs >> 5) & 1;
