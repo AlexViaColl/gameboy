@@ -12,7 +12,15 @@
 #define CPU_FREQ    4194304.0 // 4.19 MHz
 #define MCYCLE_MS   (1000.0 / 1048576.0)
 #define VSYNC       59.73
-#define HSYNC       9198.0    // 9.198 KHz
+#define HSYNC       9198.0  // 9.198 KHz
+
+// 154 scanlines (144 lines displayed and 10 lines of VBlank)
+// 4 dots per cycle (~4.194 MHz, 1 frame takes 70224 dots)
+// PPU modes:
+// Mode 2 - OAM Scan        - 80 dots
+// Mode 3 - Drawing Pixels  - 172-289 dots
+// Mode 0 - HBlank          -  87-204 dots
+// Mode 1 - VBlank          - 4560 dots (10 lines)
 
 #define SCRN_X      160 // Width of screen in pixels
 #define SCRN_Y      144 // Height of screen in pixels
@@ -105,6 +113,23 @@
 #define LCDCF_OBJON     0x02
 #define LCDCF_BGOFF     0x00  // LCDC.0: BG Display
 #define LCDCF_BGON      0x01
+
+#define STATF_LYC       0x40  // %01000000 ; LYC=LY Coincidence (Selectable)
+#define STATF_MODE10    0x20  // %00100000 ; Mode 10
+#define STATF_MODE01    0x10  // %00010000 ; Mode 01 (V-Blank)
+#define STATF_MODE00    0x08  // %00001000 ; Mode 00 (H-Blank)
+#define STATF_LYCF      0x04  // %00000100 ; Coincidence Flag
+#define STATF_HBL       0x00  // %00000000 ; H-Blank
+#define STATF_VBL       0x01  // %00000001 ; V-Blank
+#define STATF_OAM       0x02  // %00000010 ; OAM-RAM is used by system
+#define STATF_LCD       0x03  // %00000011 ; Both OAM and VRAM used by system
+#define STATF_BUSY      0x02  // %00000010 ; When set, VRAM access is unsafe
+
+#define IEF_HILO        0x10  // %00010000 ; Transition from High to Low of Pin number P10-P13
+#define IEF_SERIAL      0x08  // %00001000 ; Serial I/O transfer end
+#define IEF_TIMER       0x04  // %00000100 ; Timer Overflow
+#define IEF_STAT        0x02  // %00000010 ; STAT
+#define IEF_VBLANK      0x01  // %00000001 ; V-Blank
 
 #define P1F_GET_BTN  0x10
 #define P1F_GET_DPAD 0x20

@@ -52,6 +52,12 @@ void gb_dump(const GameBoy *gb)
     gb->printf("SCX: $%02X, SCY: $%02X, WX: $%02X WY: $02X\n",
         gb->memory[rSCX], gb->memory[rSCY],
         gb->memory[rWX], gb->memory[rWY]);
+    gb->printf("Cartridge:\n  Type: %d\n  ROM Bank: $%02X\n  ROM Bank Count: $%02X\n",
+        gb->cart_type, gb->rom_bank_num, gb->rom_bank_count);
+    gb->printf("%02X %02X %02X\n",
+        gb->memory[gb->PC+0],
+        gb->memory[gb->PC+1],
+        gb->memory[gb->PC+2]);
 }
 
 void gb_trigger_interrupt(GameBoy *gb)
@@ -215,17 +221,18 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
                 gb->ram_enabled = false;
             }
         } else if (addr <= 0x3FFF) {
-            value = value & 0x1F;
+            value = value & 0x1F; // Consider only lower 5-bits
             if (value == 0) value = 1;
-            //fprintf(stderr, "ROM Bank Number: %02X\n", value);
-            assert(value <= gb->rom_bank_count);
-            gb->rom_bank_num = value;
-            memcpy(gb->memory+0x4000, gb->rom + value*0x4000, 0x4000);
+            gb->rom_bank_num = value % gb->rom_bank_count;
+            //fprintf(stderr, "ROM Bank Number: %02X\n", gb->rom_bank_num);
+            memcpy(gb->memory+0x4000, gb->rom + gb->rom_bank_num*0x4000, 0x4000);
         } else if (addr <= 0x5FFF) {
             //fprintf(stderr, "RAM Bank Number\n");
         } else if (addr <= 0x7FFF) {
             fprintf(stderr, "Banking Mode Select\n");
         }
+
+        if (addr <= 0x7FFF) return;
     }
 
     else {
@@ -237,16 +244,16 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         gb_write_joypad_input(gb, value);
     } else if (addr == rDIV/*0xFF04*/) {
         gb->memory[addr] = 0;
-        fprintf(stderr, "$%04X: [DIV] = %02X\n", gb->PC, value);
+        fprintf(stderr, "$%04X: [DIV ] = %3d (%02X)\n", gb->PC, value, value);
     } else if (addr == rTIMA/*0xFF05*/) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TIMA] = %02X\n", gb->PC, value);
+        fprintf(stderr, "$%04X: [TIMA] = %3d (%02X)\n", gb->PC, value, value);
     } else if (addr == rTMA/*0xFF06*/) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TMA] = %02X\n", gb->PC, value);
+        fprintf(stderr, "$%04X: [TMA ] = %3d (%02X)\n", gb->PC, value, value);
     } else if (addr == rTAC/*0xFF07*/) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TAC] = %02X", gb->PC, value);
+        fprintf(stderr, "$%04X: [TAC ] = %3d (%02X)", gb->PC, value, value);
         if (value & 0x04) {
             uint8_t clock = value & 3;
             fprintf(stderr, " Enable %02X %d Hz\n", clock, gb_clock_freq(clock));
@@ -255,32 +262,60 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         }
     } else if (addr == rIF/*0xFF0F*/) {
         gb->memory[addr] = value;
-        //fprintf(stderr, "%04X: [IF/*$FF0F*/] = %02X\n", gb->PC, value);
-        // Interrupt requested, check if IME is enabled and the corresponding bit in IE
+        fprintf(stderr, "$%04X: [IF  ] = %3d (%02X)", gb->PC, value, value);
+        if (value & IEF_HILO)   fprintf(stderr, " | IEF_HILO");
+        if (value & IEF_SERIAL) fprintf(stderr, " | IEF_SERIAL");
+        if (value & IEF_TIMER)  fprintf(stderr, " | IEF_TIMER");
+        if (value & IEF_STAT)   fprintf(stderr, " | IEF_STAT");
+        if (value & IEF_VBLANK) fprintf(stderr, " | IEF_VBLANK");
+        fprintf(stderr, "\n");
     } else if (addr == rIE/*0xFFFF*/) {
         gb->memory[addr] = value;
-        //fprintf(stderr, "Writing [IE/*$FFFF*/] = %02X\n", value);
+        fprintf(stderr, "$%04X: [IE  ] = %3d (%02X)", gb->PC, value, value);
+        if (value & IEF_HILO)   fprintf(stderr, " | IEF_HILO");
+        if (value & IEF_SERIAL) fprintf(stderr, " | IEF_SERIAL");
+        if (value & IEF_TIMER)  fprintf(stderr, " | IEF_TIMER");
+        if (value & IEF_STAT)   fprintf(stderr, " | IEF_STAT");
+        if (value & IEF_VBLANK) fprintf(stderr, " | IEF_VBLANK");
+        fprintf(stderr, "\n");
     } else if (addr == rLCDC/*0xFF40*/) {
         gb->memory[addr] = value;
-        if ((value & LCDCF_WINON) == LCDCF_WINON) {
-            //printf("[rLCDC] = %02X\n", value);
-            //gb_dump(gb);
-        }
+        fprintf(stderr, "$%04X: [LCDC] = %3d (%02X)", gb->PC, value, value);
+        if (value & LCDCF_ON)       fprintf(stderr, " | LCDCF_ON");
+        if (value & LCDCF_WIN9800)  fprintf(stderr, " | LCDCF_WIN9800");
+        if (value & LCDCF_WINON)    fprintf(stderr, " | LCDCF_WINON");
+        if (value & LCDCF_BG8000)   fprintf(stderr, " | LCDCF_BG8000");
+        if (value & LCDCF_BG9C00)   fprintf(stderr, " | LCDCF_BG9C00");
+        if (value & LCDCF_OBJ16)    fprintf(stderr, " | LCDCF_OBJ16");
+        if (value & LCDCF_OBJON)    fprintf(stderr, " | LCDCF_OBJON");
+        if (value & LCDCF_BGON)     fprintf(stderr, " | LCDCF_BGON");
+        fprintf(stderr, "\n");
     } else if (addr == rSTAT/*0xFF41*/) {
         gb->memory[addr] = value;
-        printf("$%04X: [STAT] = %02X\n", gb->PC, value);
+        fprintf(stderr, "$%04X: [STAT] = %3d (%02X)", gb->PC, value, value);
+        if (value & 0x08)       fprintf(stderr, " | HBlank STAT interrupt enabled");
+        if (value & 0x10)       fprintf(stderr, " | VBlank STAT interrupt enabled");
+        if (value & 0x20)       fprintf(stderr, " | OAM STAT interrupt enabled");
+        if (value & 0x40)       fprintf(stderr, " | LYC=LY STAT interrupt enabled (LYC=%02X)", gb->memory[rLYC]);
+        fprintf(stderr, "\n");
+        //if (value != 0) assert(0);
     } else if (addr == rSCY/*0xFF42*/ || addr == rSCX/*0xFF43*/) {
-        //if (value != 0) {
-            printf("$%04X: [%s] = %d\n", gb->PC, addr == rSCY ? "rSCY" : "rSCX", value);
-        //}
-        //assert(value == 0 || 0);
+        if (gb->memory[addr] == value) return;
+        // TODO: This is a hack to prevent a glitch where the frame is renderer twice
+        // once with SCX = 0 and another time with SCX != 0
+        if (gb->memory[rLY] < 0xF) return;
+        fprintf(stderr, "$%04X: [%s ] = %3d (%02X)\n", gb->PC, addr == rSCY ? "SCY" : "SCX", value, value);
+        fprintf(stderr, "LY=%02X\n", gb->memory[rLY]);
+        gb->memory[addr] = value;
+    } else if (addr == rLYC/*0xFF45*/) {
+        fprintf(stderr, "$%04X: [LCY ] = %3d (%02X)\n", gb->PC, value, value);
         gb->memory[addr] = value;
     } else if (addr == rDMA/*0xFF46*/) {
         assert(value <= 0xDF);
         uint16_t src = value << 8;
-        uint16_t dst = 0xFE00;
-        memcpy(gb->memory + dst, gb->memory + src, 0x9F);
+        memcpy(gb->memory + 0xFE00, gb->memory + src, 0x9F);
         gb->memory[addr] = value;
+        //fprintf(stderr, "$%04X: [DMA ] = %3d (%02X)\n", gb->PC, value, value);
     } else {
         gb->memory[addr] = value;
     }
@@ -1841,7 +1876,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     printf("  New licensee code: %02X %02X\n", header->new_licensee[0], header->new_licensee[1]);
     printf("  SGB: %02X\n", header->sgb);
     printf("  Cartridge Type: %02X\n", header->cart_type);
-    printf("  ROM size: %d KiB\n", 32*(1 << header->rom_size));
+    printf("  ROM size: $%02X %d KiB\n", header->rom_size, 32*(1 << header->rom_size));
     printf("  RAM size: %02X\n", header->ram_size);
     printf("  Destination code: %02X\n", header->dest_code);
     printf("  Old licensee code: %02X\n", header->old_licensee);
@@ -1875,6 +1910,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
     } else if (gb->cart_type == 1) {
         memcpy(gb->rom, raw, size);
         gb->rom_bank_count = size / (16*1024);
+        printf("Size: %ld, ROM Bank Count: %d\n", size, gb->rom_bank_count);
 
         memcpy(gb->memory, raw, 32*1024); // Copy only the first 2 banks
     }
