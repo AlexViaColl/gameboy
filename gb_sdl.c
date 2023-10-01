@@ -530,6 +530,9 @@ int main(int argc, char **argv)
                             printf("X: %3d, Y: %3d, Tile: %3d (%02X), Attrib: %02X\n",
                                 x, y, tile_idx, tile_idx, attribs);
                         }
+
+                        printf("$FFA4: %02X\n", gb.memory[0xFFA4]);
+                        printf("SCX: %02X\n", gb.memory[rSCX]);
                     }
                     break;
                 case SDLK_s:
