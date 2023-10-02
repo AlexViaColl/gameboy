@@ -32,6 +32,7 @@ typedef enum ViewerType {
 } ViewerType;
 
 static SDL_Window *window;
+static SDL_Renderer *renderer;
 static ViewerType viewer_type = VT_GAME;
 
 static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
@@ -88,30 +89,31 @@ static void render_debug_tiles_section(SDL_Renderer *renderer, uint8_t *tiles, i
     }
 }
 
-static void render_debug_tiles(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
+static void render_debug_tiles(SDL_Renderer *renderer, int w, int h, uint8_t *tile_data)
 {
     // 3 sections of 128 tiles (16x8 tiles)
-    if (viewer_type == VT_TILES) {
-        // Render tiles at $8000-$87FF
-        {
+    // Render tiles at $8000-$87FF
+    {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        uint8_t *tiles = gb->memory + 0x8000;
+        //uint8_t *tiles = gb->memory + 0x8000;
+        uint8_t *tiles = tile_data;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*0, w, h/3);
-        }
+    }
 
-        // Render tiles at $8800-$8FFF
-        {
+    // Render tiles at $8800-$8FFF
+    {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        uint8_t *tiles = gb->memory + 0x8800;
+        //uint8_t *tiles = gb->memory + 0x8800;
+        uint8_t *tiles = tile_data + 0x800;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*1, w, h/3);
-        }
+    }
 
-        // Render tiles at $9000-$97FF
-        {
+    // Render tiles at $9000-$97FF
+    {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        uint8_t *tiles = gb->memory + 0x9000;
+        //uint8_t *tiles = gb->memory + 0x9000;
+        uint8_t *tiles = tile_data + 0x1000;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*2, w, h/3);
-        }
     }
 }
 
@@ -238,99 +240,97 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
 {
     (void)w;
     (void)h;
-    if (viewer_type == VT_REGS) {
-        int row = 2;
-        int col = 2;
-        char text[64];
-        render_debug_text(renderer, "Misc.", row++, col);
-        sprintf(text, "Type=%02X", gb->cart_type);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "JOYP=%02X", gb->memory[rP1]);
-        render_debug_text(renderer, text, row++, col);
+    int row = 2;
+    int col = 2;
+    char text[64];
+    render_debug_text(renderer, "Misc.", row++, col);
+    sprintf(text, "Type=%02X", gb->cart_type);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "JOYP=%02X", gb->memory[rP1]);
+    render_debug_text(renderer, text, row++, col);
 
-        row++;
-        render_debug_text(renderer, "Int.", row++, col);
-        sprintf(text, "IME =%02X", gb->IME);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "IF  =%02X", gb->memory[rIF]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "IE  =%02X", gb->memory[rIE]);
-        render_debug_text(renderer, text, row++, col);
+    row++;
+    render_debug_text(renderer, "Int.", row++, col);
+    sprintf(text, "IME =%02X", gb->IME);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "IF  =%02X", gb->memory[rIF]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "IE  =%02X", gb->memory[rIE]);
+    render_debug_text(renderer, text, row++, col);
 
-        row++;
-        render_debug_text(renderer, "Timer", row++, col);
-        sprintf(text, "DIV =%02X", gb->memory[rDIV]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "TIMA=%02X", gb->memory[rTIMA]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "TMA =%02X", gb->memory[rTMA]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "TAC =%02X", gb->memory[rTAC]);
-        render_debug_text(renderer, text, row++, col);
+    row++;
+    render_debug_text(renderer, "Timer", row++, col);
+    sprintf(text, "DIV =%02X", gb->memory[rDIV]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "TIMA=%02X", gb->memory[rTIMA]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "TMA =%02X", gb->memory[rTMA]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "TAC =%02X", gb->memory[rTAC]);
+    render_debug_text(renderer, text, row++, col);
 
-        row++;
-        render_debug_text(renderer, "Display", row++, col);
-        sprintf(text, "LCDC=%02X", gb->memory[rLCDC]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "STAT=%02X", gb->memory[rSTAT]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "SCX =%02X", gb->memory[rSCX]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "SCY =%02X", gb->memory[rSCY]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "LY  =%02X", gb->memory[rLY]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "LYC =%02X", gb->memory[rLYC]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "BGP =%02X", gb->memory[rBGP]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "OBP0=%02X", gb->memory[rOBP0]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "OBP1=%02X", gb->memory[rOBP1]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "WX  =%02X", gb->memory[rWX]);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "WY  =%02X", gb->memory[rWY]);
-        render_debug_text(renderer, text, row++, col);
+    row++;
+    render_debug_text(renderer, "Display", row++, col);
+    sprintf(text, "LCDC=%02X", gb->memory[rLCDC]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "STAT=%02X", gb->memory[rSTAT]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "SCX =%02X", gb->memory[rSCX]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "SCY =%02X", gb->memory[rSCY]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "LY  =%02X", gb->memory[rLY]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "LYC =%02X", gb->memory[rLYC]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "BGP =%02X", gb->memory[rBGP]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "OBP0=%02X", gb->memory[rOBP0]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "OBP1=%02X", gb->memory[rOBP1]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "WX  =%02X", gb->memory[rWX]);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "WY  =%02X", gb->memory[rWY]);
+    render_debug_text(renderer, text, row++, col);
 
-        row = 2;
-        col = 12;
-        render_debug_text(renderer, "CPU Regs", row++, col);
-        sprintf(text, "AF = %02X %02X", gb->AF >> 8, gb->AF & 0xFF);
-        render_debug_text(renderer, text, row, col);
-        sprintf(text, "%c%c%c%c",
-            gb_get_flag(gb, Flag_Z) ? 'Z' : '-',
-            gb_get_flag(gb, Flag_N) ? 'N' : '-',
-            gb_get_flag(gb, Flag_H) ? 'H' : '-',
-            gb_get_flag(gb, Flag_C) ? 'C' : '-');
-        render_debug_text(renderer, text, row++, col + 12);
+    row = 2;
+    col = 12;
+    render_debug_text(renderer, "CPU Regs", row++, col);
+    sprintf(text, "AF = %02X %02X", gb->AF >> 8, gb->AF & 0xFF);
+    render_debug_text(renderer, text, row, col);
+    sprintf(text, "%c%c%c%c",
+        gb_get_flag(gb, Flag_Z) ? 'Z' : '-',
+        gb_get_flag(gb, Flag_N) ? 'N' : '-',
+        gb_get_flag(gb, Flag_H) ? 'H' : '-',
+        gb_get_flag(gb, Flag_C) ? 'C' : '-');
+    render_debug_text(renderer, text, row++, col + 12);
 
-        sprintf(text, "BC = %02X %02X", gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C));
-        render_debug_text(renderer, text, row++, col);
+    sprintf(text, "BC = %02X %02X", gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C));
+    render_debug_text(renderer, text, row++, col);
 
-        sprintf(text, "DE = %02X %02X", gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E));
-        render_debug_text(renderer, text, row++, col);
+    sprintf(text, "DE = %02X %02X", gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E));
+    render_debug_text(renderer, text, row++, col);
 
-        sprintf(text, "HL = %04X", gb->HL);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "SP = %04X", gb->SP);
-        render_debug_text(renderer, text, row++, col);
-        sprintf(text, "PC = %04X", gb->PC);
-        render_debug_text(renderer, text, row++, col);
+    sprintf(text, "HL = %04X", gb->HL);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "SP = %04X", gb->SP);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "PC = %04X", gb->PC);
+    render_debug_text(renderer, text, row++, col);
 
-        row++;
-        render_debug_text(renderer, "Next inst", row++, col);
-        Inst inst = gb_fetch_inst(gb);
-        char decoded[32];
-        gb_decode(inst, decoded, sizeof(decoded));
-        sprintf(text, "%04X: %s", gb->PC, decoded);
-        render_debug_text(renderer, text, row++, col);
+    row++;
+    render_debug_text(renderer, "Next inst", row++, col);
+    Inst inst = gb_fetch_inst(gb);
+    char decoded[32];
+    gb_decode(inst, decoded, sizeof(decoded));
+    sprintf(text, "%04X: %s", gb->PC, decoded);
+    render_debug_text(renderer, text, row++, col);
 
-        if (inst.size == 1) sprintf(text, "%02X", inst.data[0]);
-        else if (inst.size == 2) sprintf(text, "%02X %02X", inst.data[0], inst.data[1]);
-        else if (inst.size == 3) sprintf(text, "%02X %02X %02X", inst.data[0], inst.data[1], inst.data[2]);
-        render_debug_text(renderer, text, row++, col);
-    }
+    if (inst.size == 1) sprintf(text, "%02X", inst.data[0]);
+    else if (inst.size == 2) sprintf(text, "%02X %02X", inst.data[0], inst.data[1]);
+    else if (inst.size == 3) sprintf(text, "%02X %02X %02X", inst.data[0], inst.data[1], inst.data[2]);
+    render_debug_text(renderer, text, row++, col);
 }
 
 static void render_debug_tile_grid(SDL_Renderer *renderer, int pixel_dim, int x, int y)
@@ -376,25 +376,23 @@ static void render_debug_viewport(SDL_Renderer *renderer, int pixel_dim, int x, 
 
 void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
 {
-    if (viewer_type == VT_TILEMAP) {
-        int min_dim = h < w ? h : w;
-        int pixel_dim = min_dim / 256; // GameBoy pixel size
-        int x = (w - (256*pixel_dim))/2;
-        int y = (h - (256*pixel_dim))/2;
-        for (int row = 0; row < 256; row++) {
-            for (int col = 0; col < 256; col++) {
-                uint8_t color = gb->display[row*256 + col];
-                SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-                SDL_Rect r = {
-                    x+col*pixel_dim, y+row*pixel_dim,
-                    pixel_dim, pixel_dim};
-                SDL_RenderFillRect(renderer, &r);
-            }
+    int min_dim = h < w ? h : w;
+    int pixel_dim = min_dim / 256; // GameBoy pixel size
+    int x = (w - (256*pixel_dim))/2;
+    int y = (h - (256*pixel_dim))/2;
+    for (int row = 0; row < 256; row++) {
+        for (int col = 0; col < 256; col++) {
+            uint8_t color = gb->display[row*256 + col];
+            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+            SDL_Rect r = {
+                x+col*pixel_dim, y+row*pixel_dim,
+                pixel_dim, pixel_dim};
+            SDL_RenderFillRect(renderer, &r);
         }
-
-        render_debug_viewport(renderer, pixel_dim, x + gb->memory[rSCX]*pixel_dim, y);
-        render_debug_tile_grid(renderer, pixel_dim, x, y);
     }
+
+    render_debug_viewport(renderer, pixel_dim, x + gb->memory[rSCX]*pixel_dim, y);
+    render_debug_tile_grid(renderer, pixel_dim, x, y);
 }
 
 void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
@@ -429,25 +427,29 @@ void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
     }
 
     // Debug rendering
-    render_debug_tilemap(gb, renderer, w, h);
-    render_debug_tiles(gb, renderer, w, h);
-    render_debug_hw_regs(gb, renderer, w, h);
+    if (viewer_type == VT_TILEMAP) {
+        render_debug_tilemap(gb, renderer, w, h);
+    } else if (viewer_type == VT_TILES) {
+        render_debug_tiles(renderer, w, h, gb->memory + 0x8000);
+    } else if (viewer_type == VT_REGS) {
+        render_debug_hw_regs(gb, renderer, w, h);
+    }
 
     SDL_RenderPresent(renderer);
 }
 
-int main(int argc, char **argv)
-{
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <path to ROM>\n", argv[0]);
-        exit(1);
+bool cstr_ends_with(const char *src, const char *end) {
+    long src_len = strlen(src);
+    long end_len = strlen(end);
+    if (end_len > src_len) return false;
+    for (size_t i = 0; i < (size_t)end_len; i++) {
+        if (src[src_len - i] != end[end_len - i]) return false;
     }
+    return true;
+}
 
-    GameBoy gb = {0};
-    gb.running = true;
-    gb.printf = printf;
-    gb_load_rom_file(&gb, argv[1]);
-
+void sdl_init(void)
+{
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
@@ -461,11 +463,48 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, 0);
+    renderer = SDL_CreateRenderer(window, -1, 0);
     if (!renderer) {
         fprintf(stderr, "Failed to create renderer\n");
         exit(1);
     }
+}
+
+void tile_viewer(const char *file_path)
+{
+    size_t size;
+    uint8_t *tile_data = read_entire_file(file_path, &size);
+    printf("Tiledata size: %ld\n", size);
+
+    SDL_Event e;
+    bool running = true;
+    while (running) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) running = false;
+            else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+                SDL_Keycode key = e.key.keysym.sym;
+                if (key == SDLK_ESCAPE) running = false;
+            }
+        }
+
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+
+        SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
+        SDL_RenderClear(renderer);
+
+        render_debug_tiles(renderer, w, h, tile_data);
+
+        SDL_RenderPresent(renderer);
+    }
+}
+
+void emulator(const char *file_path)
+{
+    GameBoy gb = {0};
+    gb.running = true;
+    gb.printf = printf;
+    gb_load_rom_file(&gb, file_path);
 
     SDL_Event e;
     Uint64 counter_freq = SDL_GetPerformanceFrequency();
@@ -593,6 +632,25 @@ int main(int argc, char **argv)
             sdl_render(&gb, renderer);
             frame_ms -= 16.0;
         }
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <path to ROM>\n", argv[0]);
+        exit(1);
+    }
+
+    sdl_init();
+
+    if (cstr_ends_with(argv[1], ".2bpp")) {
+        printf("Displaying tile data (.2bpp)\n");
+        tile_viewer(argv[1]);
+    }
+
+    if (cstr_ends_with(argv[1], ".gb")) {
+        emulator(argv[1]);
     }
 
     return 0;

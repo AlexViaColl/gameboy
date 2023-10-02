@@ -11,8 +11,14 @@
 BACKLOG:
 [x] - Fix palette in Dr. Mario
 [ ] - STAT register does not reflect the mode (0, 1, 2, 3)
-[ ] - Implement Window rendering (Super Mario Land => Game Over screen)
+[ ] - Implement Window rendering
+    [ ] - Alleyway
+    [ ] - Super Mario Land => Game Over screen
+    [ ] - Ms. Pacman
 [ ] - Render by lines instead of the entire frame at once (SCX might change between lines!!!)
+[ ] - Other MBC's
+    [ ] - MBC1+RAM+BATTERY ($03)
+    [ ] - MBC3+RAM+BATTERY ($13)
 */
 
 // Debug Status
@@ -218,12 +224,12 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
     }
 
     // MBC1
-    else if (gb->cart_type == 1) {
+    else if (gb->cart_type == 1 || gb->cart_type == 3 || gb->cart_type == 0x13) {
         if (addr <= 0x1FFF) {
             if ((value & 0xF) == 0xA) {
                 fprintf(stderr, "RAM Enable\n");
                 gb->ram_enabled = true;
-                assert(0);
+                //assert(0);
             } else {
                 fprintf(stderr, "RAM Disable\n");
                 gb->ram_enabled = false;
@@ -1768,7 +1774,6 @@ void gb_render(GameBoy *gb)
             for (int col = 0; col < SCRN_VX_B; col++) {
                 int tile_idx = gb->memory[bg_tm_off + row*32 + col];
                 if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
-                //fill_solid_tile(gb, col*8, row*8, 0xff);
                 uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
                 fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
             }
@@ -1776,13 +1781,13 @@ void gb_render(GameBoy *gb)
     }
 
     // Render the Window
+#if 0
     if ((lcdc & LCDCF_WINON) == LCDCF_WINON) {
         //uint8_t wx = gb->memory[rWX] - 7;
         //uint8_t wy = gb->memory[rWY];
         //printf("WX: %3d, WY: %3d\n", wx, wy);
         //assert(0 && "Window rendering is not implemented");
 
-#if 0
         uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
 
         for (int row = wy; row < SCRN_VY_B; row++) {
@@ -1794,8 +1799,8 @@ void gb_render(GameBoy *gb)
                 fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
             }
         }
-#endif
     }
+#endif
 
     // Render the Sprites (OBJ)
     if ((lcdc & LCDCF_OBJON) == LCDCF_OBJON) {
@@ -1916,12 +1921,14 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         gb->rom_bank_count = 2;
 
         memcpy(gb->memory, raw, size);
-    } else if (gb->cart_type == 1) {
+    } else if (gb->cart_type == 1 || gb->cart_type == 3 || gb->cart_type == 0x13) {
         memcpy(gb->rom, raw, size);
         gb->rom_bank_count = size / (16*1024);
         printf("Size: %ld, ROM Bank Count: %d\n", size, gb->rom_bank_count);
 
         memcpy(gb->memory, raw, 32*1024); // Copy only the first 2 banks
+    } else {
+        assert(0 && "MBC not implemented yet!");
     }
 
 #if 0
