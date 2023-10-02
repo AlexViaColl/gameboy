@@ -10,6 +10,10 @@
 /*
 BACKLOG:
 [x] - Fix palette in Dr. Mario
+[ ] - Crash due to Illegal Instruction (0xFD) - Super Mario Land
+        It seems that the incorrect Bank (2) is loaded into $4000-$8000 and we
+        try to execute an invalid instruction.
+        Most probably, the reason is we have not implemented timing/interrupts correctly
 [ ] - STAT register does not reflect the mode (0, 1, 2, 3)
 [ ] - Implement Window rendering
     [ ] - Alleyway
@@ -19,6 +23,7 @@ BACKLOG:
 [ ] - Other MBC's
     [ ] - MBC1+RAM+BATTERY ($03)
     [ ] - MBC3+RAM+BATTERY ($13)
+[ ] - Music
 */
 
 // Debug Status
@@ -238,7 +243,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
             value = value & 0x1F; // Consider only lower 5-bits
             if (value == 0) value = 1;
             gb->rom_bank_num = value % gb->rom_bank_count;
-            //fprintf(stderr, "ROM Bank Number: %02X\n", gb->rom_bank_num);
+            fprintf(stderr, "$%04X: ROM Bank Number: %02X\n", gb->PC, gb->rom_bank_num);
             memcpy(gb->memory+0x4000, gb->rom + gb->rom_bank_num*0x4000, 0x4000);
         } else if (addr <= 0x5FFF) {
             //fprintf(stderr, "RAM Bank Number\n");
@@ -317,7 +322,7 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         if (gb->memory[addr] == value) return;
         // TODO: This is a hack to prevent a glitch where the frame is renderer twice
         // once with SCX = 0 and another time with SCX != 0
-        if (gb->memory[rLY] < 0xF) return;
+        //if (gb->memory[rLY] < 0xF) return;
         fprintf(stderr, "$%04X: [%s ] = %3d (%02X)\n", gb->PC, addr == rSCY ? "SCY" : "SCX", value, value);
         fprintf(stderr, "LY=%02X\n", gb->memory[rLY]);
         gb->memory[addr] = value;
@@ -565,6 +570,7 @@ Inst gb_fetch_inst(const GameBoy *gb)
     if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
         b == 0xEB || b == 0xEC || b == 0xED || b == 0xF4 || b == 0xFC || b == 0xFD)
     {
+        gb_dump(gb);
         fprintf(stderr, "Illegal Instruction 0x%02X\n", b);
         exit(1);
     }
@@ -894,21 +900,10 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
 
 void gb_exec(GameBoy *gb, Inst inst)
 {
-    // Break at 
-    // $069F - ret z
-    // $0296 - halt
-    // $0050 - timer int. handler
-    //
-    // $1DFD - update $FFA4 (variable holding scroll X ???)
-    // $00A5 - copy from $FFA4 to SCX ???
-    // $008B - 
-#if 0
-    if (gb->PC == 0x0048) {
-        gb_dump(gb);
-        assert(0);
-    }
-#endif
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
+    if (gb->PC == 0x0048) {
+        fprintf(stderr, "$%04X: STAT interrupt handler\n", gb->PC);
+    }
 
     uint8_t IE = gb->memory[rIE];
     uint8_t IF = gb->memory[rIF];
@@ -1758,75 +1753,92 @@ static void dump_tile(uint8_t *tile)
     }
 }
 
-void gb_render(GameBoy *gb)
+static void gb_render_row(GameBoy *gb, int px_row)
 {
     uint8_t lcdc = gb->memory[rLCDC];
     if ((lcdc & LCDCF_ON) != LCDCF_ON) return;
+    if ((lcdc & LCDCF_BGON) != LCDCF_BGON) return;
 
-    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?
-        _VRAM8000 : _VRAM9000;
+    uint16_t scx = gb->memory[rSCX];
+    uint16_t scy = gb->memory[rSCY];
 
-    // Render the Background
-    if ((lcdc & LCDCF_BGON) == LCDCF_BGON) {
-        uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
+    uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?  _VRAM8000 : _VRAM9000;
+    uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
 
-        for (int row = 0; row < SCRN_VY_B; row++) {
-            for (int col = 0; col < SCRN_VX_B; col++) {
-                int tile_idx = gb->memory[bg_tm_off + row*32 + col];
-                if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
-                uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
-                fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
+    uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
+    uint8_t bgp = gb->memory[rBGP];
+    uint8_t bgp_tbl[] = {(bgp >> 0) & 3, (bgp >> 2) & 3, (bgp >> 4) & 3, (bgp >> 6) & 3};
+
+    int tile_row = px_row / 8; // 0-31
+    for (int px_col = 0; px_col < 256; px_col++) {
+        //px_col = (px_col+scx) % 256;
+        int tile_col = px_col / 8; // 0-31
+
+        int tile_idx = gb->memory[bg_tm_off + tile_row*32 + tile_col]; // 0-383
+        if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
+
+        uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16; // 8x8 pixels (16-bytes)
+
+        uint8_t char_row = px_row % 8; // 0-7
+        uint8_t low_bitplane  = tile[char_row*2+0];
+        uint8_t high_bitplane = tile[char_row*2+1];
+
+        uint8_t bit0 = (low_bitplane  >> (7 - (px_col % 8))) & 1;
+        uint8_t bit1 = (high_bitplane >> (7 - (px_col % 8))) & 1;
+
+        uint8_t color_idx = (bit1 << 1) | bit0; // 0-3 (2bpp)
+        uint8_t palette_idx = bgp_tbl[color_idx];
+        uint8_t color = PALETTE[palette_idx];
+
+        //gb->display[px_row*256 + ((px_col + scx) % 256)] = color;
+        gb->display[px_row*256 + px_col] = color;
+    }
+}
+
+static void gb_render_sprites(GameBoy *gb)
+{
+    uint8_t lcdc = gb->memory[rLCDC];
+    if ((lcdc & LCDCF_OBJON) != LCDCF_OBJON) return;
+    uint16_t scx = gb->memory[rSCX];
+    uint16_t scy = gb->memory[rSCY];
+    for (int i = 0; i < OAM_COUNT; i++) {
+        uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
+        uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
+        uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
+        uint8_t attribs  = gb->memory[_OAMRAM + i*4 + 3];
+
+        x = (x+scx) % 256;
+        y = (y+scy) % 256;
+
+        uint8_t bg_win_over = (attribs >> 7) & 1;
+        uint8_t yflip = (attribs >> 6) & 1;
+        uint8_t xflip = (attribs >> 5) & 1;
+        uint8_t plt_idx = (attribs >> 4) & 1;
+
+        // TODO: Support BG/Win over OBJ
+        //assert(bg_win_over == 0);
+        (void)bg_win_over;
+
+        uint8_t *tile_start = gb->memory + _VRAM8000 + tile_idx*16;
+        uint8_t tile[16];
+        memcpy(tile, tile_start, 16);
+        if (xflip) {
+            for (int i = 0; i < 16; i++) {
+                uint8_t *b = tile + i;
+                *b = flip_horz(*b);
             }
         }
-    }
-
-    // Render the Window
-#if 0
-    if ((lcdc & LCDCF_WINON) == LCDCF_WINON) {
-        //uint8_t wx = gb->memory[rWX] - 7;
-        //uint8_t wy = gb->memory[rWY];
-        //printf("WX: %3d, WY: %3d\n", wx, wy);
-        //assert(0 && "Window rendering is not implemented");
-
-        uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
-
-        for (int row = wy; row < SCRN_VY_B; row++) {
-            for (int col = wx; col < SCRN_VX_B; col++) {
-                int tile_idx = gb->memory[bg_tm_off + row*32 + col];
-                if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
-                fill_solid_tile(gb, col*8, row*8, 0xff);
-                uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
-                fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
-            }
+        if (yflip) {
+            flip_vert(tile);
         }
-    }
-#endif
 
-    // Render the Sprites (OBJ)
-    if ((lcdc & LCDCF_OBJON) == LCDCF_OBJON) {
-        uint16_t scx = gb->memory[rSCX];
-        uint16_t scy = gb->memory[rSCY];
-        for (int i = 0; i < OAM_COUNT; i++) {
-            uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
-            uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
-            uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
-            uint8_t attribs  = gb->memory[_OAMRAM + i*4 + 3];
+        fill_tile(gb, x, yflip ? (y + 8) : y, tile, true, gb->memory[rOBP0+plt_idx]);
 
-            x = (x+scx) % 256;
-            y = (y+scy) % 256;
-
-            uint8_t bg_win_over = (attribs >> 7) & 1;
-            uint8_t yflip = (attribs >> 6) & 1;
-            uint8_t xflip = (attribs >> 5) & 1;
-            uint8_t plt_idx = (attribs >> 4) & 1;
-
-            // TODO: Support BG/Win over OBJ
-            //assert(bg_win_over == 0);
-            (void)bg_win_over;
-
-            uint8_t *tile_start = gb->memory + _VRAM8000 + tile_idx*16;
+        if(lcdc & LCDCF_OBJ16) {
+            uint8_t *tile_start = gb->memory + _VRAM8000 + (tile_idx+1)*16;
             uint8_t tile[16];
             memcpy(tile, tile_start, 16);
+
             if (xflip) {
                 for (int i = 0; i < 16; i++) {
                     uint8_t *b = tile + i;
@@ -1837,27 +1849,52 @@ void gb_render(GameBoy *gb)
                 flip_vert(tile);
             }
 
-            fill_tile(gb, x, yflip ? (y + 8) : y, tile, true, gb->memory[rOBP0+plt_idx]);
-
-            if(lcdc & LCDCF_OBJ16) {
-                uint8_t *tile_start = gb->memory + _VRAM8000 + (tile_idx+1)*16;
-                uint8_t tile[16];
-                memcpy(tile, tile_start, 16);
-
-                if (xflip) {
-                    for (int i = 0; i < 16; i++) {
-                        uint8_t *b = tile + i;
-                        *b = flip_horz(*b);
-                    }
-                }
-                if (yflip) {
-                    flip_vert(tile);
-                }
-
-                fill_tile(gb, x, yflip ? y : (y + 8), tile, true, gb->memory[rOBP0+plt_idx]);
-            }
+            fill_tile(gb, x, yflip ? y : (y + 8), tile, true, gb->memory[rOBP0+plt_idx]);
         }
     }
+}
+
+static void gb_render_window(GameBoy *gb)
+{
+    uint8_t lcdc = gb->memory[rLCDC];
+    if ((lcdc & LCDCF_WINON) != LCDCF_WINON) return;
+#if 0
+    //uint8_t wx = gb->memory[rWX] - 7;
+    //uint8_t wy = gb->memory[rWY];
+    //printf("WX: %3d, WY: %3d\n", wx, wy);
+    //assert(0 && "Window rendering is not implemented");
+
+    uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
+
+    for (int row = wy; row < SCRN_VY_B; row++) {
+        for (int col = wx; col < SCRN_VX_B; col++) {
+            int tile_idx = gb->memory[bg_tm_off + row*32 + col];
+            if (bg_win_td_off == _VRAM9000) tile_idx = (int8_t)tile_idx;
+            fill_solid_tile(gb, col*8, row*8, 0xff);
+            uint8_t *tile = gb->memory + bg_win_td_off + tile_idx*16;
+            fill_tile(gb, col*8, row*8, tile, false, gb->memory[rBGP]);
+        }
+    }
+#endif
+}
+
+void gb_render(GameBoy *gb)
+{
+    uint8_t lcdc = gb->memory[rLCDC];
+    if ((lcdc & LCDCF_ON) != LCDCF_ON) return;
+
+    // Render the Background
+    if ((lcdc & LCDCF_BGON) == LCDCF_BGON) {
+        for (int px_row = 0; px_row < 256; px_row++) {
+            gb_render_row(gb, px_row);
+        }
+    }
+
+    // Render the Window
+    gb_render_window(gb);
+
+    // Render the Sprites (OBJ)
+    gb_render_sprites(gb);
 }
 
 void gb_load_boot_rom(GameBoy *gb)
@@ -1989,7 +2026,6 @@ void gb_tick(GameBoy *gb, double dt_ms)
             gb->timer_ly -= 0.1089;
             // VSync ~60Hz
             // 60*153 ~9180 times/s (run every 0.1089 ms)
-            gb->memory[rLY] += 1;
             if (gb->memory[rLY] == gb->memory[rLYC]) {
                 gb->memory[rSTAT] |= 0x04; 
                 if (gb->memory[rIE] & 0x02) {
@@ -1998,6 +2034,7 @@ void gb_tick(GameBoy *gb, double dt_ms)
             } else {
                 gb->memory[rSTAT] &= ~0x04;
             }
+            gb->memory[rLY] += 1;
             if (gb->memory[rLY] > 153) {
                 gb->memory[rIF] |= 0x01;
                 // Run this line 60 times/s (60Hz)
@@ -2007,8 +2044,16 @@ void gb_tick(GameBoy *gb, double dt_ms)
     }
 
     // Copy tiles to display
+    //gb_render(gb);
+
+    assert(gb->memory[rLY] <= 153);
+    gb_render_row(gb, gb->memory[rLY]); // LY 0-153
     if (gb->memory[rLY] == 144) {
-        gb_render(gb);
+        for (int row = 154; row < 256; row++) {
+            gb_render_row(gb, row);
+        }
+
+        gb_render_sprites(gb);
     }
 
     // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)

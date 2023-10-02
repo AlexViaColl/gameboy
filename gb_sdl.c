@@ -628,7 +628,7 @@ void emulator(const char *file_path)
         gb_tick(&gb, dt_ms);
 
         // Render
-        if (frame_ms > 16.0) {
+        if (frame_ms > 16.0 && gb.memory[rLY] == 144) {
             sdl_render(&gb, renderer);
             frame_ms -= 16.0;
         }
