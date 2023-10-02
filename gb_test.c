@@ -1620,10 +1620,8 @@ void foo(void)
 }
 #endif
 
-int main(void)
+void test_cpu_instructions(void)
 {
-    test_fetch_inst();
-
     test_inst_nop();
     //test_inst_stop(); printf("\n");
 
@@ -1774,7 +1772,10 @@ int main(void)
     test_inst_add_a_hl_mem();
     test_inst_daa();
     test_inst_cp_n();
+}
 
+void test_cpu_timing(void)
+{
     test_time_nop();
     test_time_inc_reg16();
     test_time_add_a_mem_hl();
@@ -1784,6 +1785,42 @@ int main(void)
     test_time_ret_z();  // C0, C8, D0, D8
     test_time_jp_z();   // C2, CA, D2, DA
     test_time_call_z(); // C4, CC, D4, DC
+}
+
+void test_interrupt_with_ime_not_set(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.IME = 0;
+    gb.memory[rIE] |= IEF_VBLANK; // %00000001
+
+    Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == 1);
+    test_end
+}
+
+void test_interrupt_with_ime_set(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.IME = 1;
+    gb.memory[rIE] |= IEF_VBLANK; // %00000001
+    gb.memory[rIF] |= IEF_VBLANK; // %00000001
+    
+    Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
+    gb_exec(&gb, inst);
+
+    assert(gb.PC == 0x0040);
+    test_end
+}
+
+int main(void)
+{
+    test_fetch_inst();
+    test_cpu_instructions();
+    test_cpu_timing();
 
     test_div_write_reset();
     test_div_inc_rate();
@@ -1793,6 +1830,10 @@ int main(void)
 
     test_render_lcd_off();
     test_render_lcd_on_bg_on();
+
+    // Interrupts
+    test_interrupt_with_ime_not_set();
+    test_interrupt_with_ime_set();
 
     return 0;
 }
