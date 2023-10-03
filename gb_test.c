@@ -1823,6 +1823,86 @@ void test_interrupts(void)
     test_vblank_interrupt_with_ime_set();
 }
 
+void test_p1_joypad_register(void)
+{
+    test_begin
+    // No buttons pressed
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xCF);
+    }
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        assert(gb.memory[rP1] == 0xCF);
+    }
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rP1, P1F_GET_NONE);
+        assert(gb.memory[rP1] == 0xCF);
+    }
+    // Action buttons (single)
+    {
+        GameBoy gb = {0};
+        gb.button_a = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xCE/*11|00|1110*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.button_b = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xCD/*11|00|1101*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.button_select = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xCB/*11|00|1011*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.button_start = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xC7/*11|00|0111*/);
+    }
+    // Action buttons (multi)
+    {
+        GameBoy gb = {0};
+        gb.button_a = 1;
+        gb.button_b = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        assert(gb.memory[rP1] == 0xCC/*11|00|1100*/);
+    }
+    // Direction buttons (single)
+    {
+        GameBoy gb = {0};
+        gb.dpad_right = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        assert(gb.memory[rP1] == 0xCE/*11|00|1110*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.dpad_left = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        assert(gb.memory[rP1] == 0xCD/*11|00|1101*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.dpad_up = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        assert(gb.memory[rP1] == 0xCB/*11|00|1011*/);
+    }
+    {
+        GameBoy gb = {0};
+        gb.dpad_down = 1;
+        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        assert(gb.memory[rP1] == 0xC7/*11|00|0111*/);
+    }
+    test_end
+}
+
 void test_lcd_status_register(void)
 {
     test_begin
@@ -1906,7 +1986,29 @@ int main(void)
 
     test_interrupts();
 
+    // I/O registers
+    test_p1_joypad_register();
+    //test_serial_transfer_data_register();
+    //test_serial_transfer_control_register();
+    //test_divider_register();
+    //test_timer_counter_register();
+    //test_timer_modulo_register();
+    //test_timer_control_register();
+    //test_interrupt_flag_register();
+    //test_audio_registers(); // NR10 - NR52, Wave RAM
+    //test_lcd_control_register();
     test_lcd_status_register();
+    //test_viewport_y_register();
+    //test_viewport_x_register();
+    //test_lcd_y_coordinate_register();
+    //test_ly_compare_register();
+    //test_dma_register();
+    //test_bgp_register();
+    //test_obp0_register();
+    //test_obp1_register();
+    //test_window_y_register();
+    //test_window_x_register();
+    //test_interrupt_enable_register();
 
     return 0;
 }

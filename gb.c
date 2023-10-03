@@ -10,6 +10,7 @@
 /*
 BACKLOG:
 [x] - Fix palette in Dr. Mario
+[ ] - LY and STAT should not automatically update when the LCD/PPU is OFF LCDC.7 = 0
 [ ] - Crash due to Illegal Instruction (0xFD) - Super Mario Land
         It seems that the incorrect Bank (2) is loaded into $4000-$8000 and we
         try to execute an invalid instruction.
@@ -107,6 +108,8 @@ uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr)
 
 void gb_write_joypad_input(GameBoy *gb, uint8_t value)
 {
+    gb->memory[rP1] |= 0xC0;
+
     if (value == P1F_GET_BTN) {
         if (gb->button_a) {
             gb->memory[rP1] &= ~0x01;
@@ -150,7 +153,7 @@ void gb_write_joypad_input(GameBoy *gb, uint8_t value)
             gb->memory[rP1] |= 0x08;
         }
     } else if (value == P1F_GET_NONE) {
-        // TODO
+        gb->memory[rP1] |= 0x0F;
     }
 }
 
