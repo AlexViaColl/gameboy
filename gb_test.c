@@ -1460,35 +1460,6 @@ void test_time_call_z(void)
     test_end
 }
 
-void test_div_write_reset(void)
-{
-    test_begin
-    GameBoy gb = {0};
-    gb.memory[rDIV/*FF04*/] = 0x69;
-
-    gb_write_memory(&gb, rDIV/*FF04*/, 1);
-
-    assert(gb.memory[rDIV/*FF04*/] == 0);
-    test_end
-}
-
-void test_div_inc_rate(void)
-{
-    test_begin
-    GameBoy gb = {0};
-
-    gb_tick(&gb, 0);
-    assert(gb.memory[rDIV] == 0);
-
-    gb_tick(&gb, 1000.0 / 16384);
-    assert(gb.memory[rDIV] == 1);
-
-    gb_tick(&gb, 10 * (1000.0 / 16384));
-    assert(gb.memory[rDIV] == 11);
-
-    test_end
-}
-
 void test_tima_inc_rate_of_tac(void)
 {
     test_begin
@@ -1913,6 +1884,34 @@ void test_serial_transfer_data_and_control_register(void)
     test_end
 }
 
+void test_divider_register(void)
+{
+    test_begin
+
+    // Writing any value to DIV resets it to $00
+    {
+        GameBoy gb = {0};
+        gb.memory[rDIV/*FF04*/] = 0x69;
+        gb_write_memory(&gb, rDIV/*FF04*/, 1);
+        assert(gb.memory[rDIV/*FF04*/] == 0);
+    }
+
+    // DIV increments at a rate of 16384 Hz
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, 0);
+        assert(gb.memory[rDIV] == 0);
+
+        gb_tick(&gb, 1000.0 / 16384);
+        assert(gb.memory[rDIV] == 1);
+
+        gb_tick(&gb, 10 * (1000.0 / 16384));
+        assert(gb.memory[rDIV] == 11);
+    }
+
+    test_end
+}
+
 void test_lcd_status_register(void)
 {
     test_begin
@@ -1985,9 +1984,6 @@ int main(void)
     test_cpu_instructions();
     test_cpu_timing();
 
-    test_div_write_reset();
-    test_div_inc_rate();
-
     test_tima_inc_rate_of_tac();
     test_tima_interrupt_on_overflow();
 
@@ -1999,7 +1995,7 @@ int main(void)
     // I/O registers
     test_p1_joypad_register();
     test_serial_transfer_data_and_control_register();
-    //test_divider_register();
+    test_divider_register();
     //test_timer_counter_register();
     //test_timer_modulo_register();
     //test_timer_control_register();
