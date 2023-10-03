@@ -1562,7 +1562,7 @@ void test_render_lcd_on_bg_on(void)
 
     gb_render(&gb);
     for (size_t i = 0; i < SCRN_VX*SCRN_VY; i++) {
-        assert(gb.display[i] == 0xFF);
+        assert(gb.display[i] == PALETTE[0]);
     }
     test_end
 }

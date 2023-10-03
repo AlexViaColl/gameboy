@@ -26,7 +26,7 @@ BACKLOG:
 [ ] - Music
 */
 
-static const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
+const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
 //static const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
 
 // Debug Status

@@ -35,9 +35,6 @@ static SDL_Window *window;
 static SDL_Renderer *renderer;
 static ViewerType viewer_type = VT_GAME;
 
-static const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
-//static const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
-
 static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
 {
     // 8x8 pixels

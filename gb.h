@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 typedef uint32_t Color;
+extern const Color PALETTE[4];
 
 #define WIDTH  160 // 20 tiles
 #define HEIGHT 144 // 18 tiles
