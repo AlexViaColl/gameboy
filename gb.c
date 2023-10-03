@@ -26,6 +26,9 @@ BACKLOG:
 [ ] - Music
 */
 
+static const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
+//static const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
+
 // Debug Status
 static size_t bp_count = 0;
 #define MAX_BREAKPOINTS 16
@@ -1674,7 +1677,7 @@ static size_t gb_tile_coord_to_pixel(int row, int col)
     return row_pixel*SCRN_VX + col_pixel;
 }
 
-static void fill_solid_tile(GameBoy *gb, int x, int y, uint8_t color)
+static void fill_solid_tile(GameBoy *gb, int x, int y, Color color)
 {
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
@@ -1696,7 +1699,6 @@ static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparenc
     // tile is 16 bytes
     //uint8_t bgp = gb->memory[rBGP];
     uint8_t bgp = plt;
-    uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
     uint8_t bgp_tbl[] = {(bgp >> 0) & 3, (bgp >> 2) & 3, (bgp >> 4) & 3, (bgp >> 6) & 3};
     for (int row = 0; row < 8; row++) {
         // 64 pixels, but only 16 bytes (2 bytes per row)
@@ -1709,7 +1711,7 @@ static void fill_tile(GameBoy *gb, int x, int y, uint8_t *tile, bool transparenc
             high_bitplane <<= 1;
             uint8_t color_idx = (bit1 << 1) | bit0; // 0-3
             uint8_t palette_idx = bgp_tbl[color_idx];
-            uint8_t color = PALETTE[palette_idx];
+            Color color = PALETTE[palette_idx];
             if (!transparency || color_idx != 0) {
                 int r = (row+y) % 256;
                 int c = (col+x) % 256;
@@ -1765,7 +1767,6 @@ static void gb_render_row(GameBoy *gb, int px_row)
     uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?  _VRAM8000 : _VRAM9000;
     uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
 
-    uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
     uint8_t bgp = gb->memory[rBGP];
     uint8_t bgp_tbl[] = {(bgp >> 0) & 3, (bgp >> 2) & 3, (bgp >> 4) & 3, (bgp >> 6) & 3};
 
@@ -1788,7 +1789,7 @@ static void gb_render_row(GameBoy *gb, int px_row)
 
         uint8_t color_idx = (bit1 << 1) | bit0; // 0-3 (2bpp)
         uint8_t palette_idx = bgp_tbl[color_idx];
-        uint8_t color = PALETTE[palette_idx];
+        Color color = PALETTE[palette_idx];
 
         //gb->display[px_row*256 + ((px_col + scx) % 256)] = color;
         gb->display[px_row*256 + px_col] = color;

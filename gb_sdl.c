@@ -35,10 +35,12 @@ static SDL_Window *window;
 static SDL_Renderer *renderer;
 static ViewerType viewer_type = VT_GAME;
 
+static const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
+//static const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
+
 static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
 {
     // 8x8 pixels
-    static const uint8_t PALETTE[] = {0xFF, 0x80, 0x40, 0x00};
     for (int row = 0; row < 8; row++) {
         uint8_t low_bitplane  = tile[row*2+0];
         uint8_t high_bitplane = tile[row*2+1];
@@ -49,8 +51,9 @@ static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int 
             high_bitplane <<= 1;
 
             uint8_t color_idx = (bit1 << 1) | bit0;
-            uint8_t color = PALETTE[color_idx];
-            SDL_SetRenderDrawColor(renderer, color, color, color, 0xFF);
+            Color color = PALETTE[color_idx];
+            SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
+
             int xpixel = x+col*(w/8);
             int ypixel = y+row*(h/8);
             SDL_Rect r = { xpixel, ypixel, w/8, h/8};
@@ -382,8 +385,8 @@ void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
     int y = (h - (256*pixel_dim))/2;
     for (int row = 0; row < 256; row++) {
         for (int col = 0; col < 256; col++) {
-            uint8_t color = gb->display[row*256 + col];
-            SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+            Color color = gb->display[row*256 + col];
+            SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
             SDL_Rect r = {
                 x+col*pixel_dim, y+row*pixel_dim,
                 pixel_dim, pixel_dim};
@@ -416,8 +419,8 @@ void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
             uint16_t px_row = (row+scy) % 256;
             for (int col = 0; col < 160; col++) {
                 uint16_t px_col = (col+scx) % 256;
-                uint8_t color = gb->display[px_row*256 + px_col];
-                SDL_SetRenderDrawColor(renderer, color, color, color, 255);
+                Color color = gb->display[px_row*256 + px_col];
+                SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
                 SDL_Rect r = {
                     x+col*pixel_dim, y+row*pixel_dim,
                     pixel_dim, pixel_dim};

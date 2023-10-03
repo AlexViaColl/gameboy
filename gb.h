@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef uint32_t Color;
+
 #define WIDTH  160 // 20 tiles
 #define HEIGHT 144 // 18 tiles
 
@@ -158,7 +160,7 @@ typedef struct GameBoy {
     // Tiles are 8x8 pixels (also called patterns or characters)
     // Stored with color ID's from 0 to 3 or 2 bits per pixel
     // 8x8x2 = 128 bits = 16 bytes/tile
-    uint8_t display[SCRN_VX*SCRN_VY]; // 256x256 pixels
+    Color display[SCRN_VX*SCRN_VY]; // 256x256 pixels
 
     // 0000-3FFF    16 KiB ROM bank 00
     // 4000-7FFF    16 KiB ROM bank 01~NN
