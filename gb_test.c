@@ -1460,50 +1460,6 @@ void test_time_call_z(void)
     test_end
 }
 
-void test_tima_inc_rate_of_tac(void)
-{
-    test_begin
-    GameBoy gb = {0};
-    gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
-
-    gb.memory[rTIMA] = 0;
-    gb.memory[rTAC] |= 0; // 4096 Hz
-    gb_tick(&gb, 1000.0 / 4096);
-    assert(gb.memory[rTIMA] == 1);
-
-    gb.memory[rTIMA] = 0;
-    gb.memory[rTAC] |= 1; // 262144 Hz
-    gb_tick(&gb, 1000.0 / 262144);
-    assert(gb.memory[rTIMA] == 1);
-
-    gb.memory[rTIMA] = 0;
-    gb.memory[rTAC] |= 2; // 65536 Hz
-    gb_tick(&gb, 1000.0 / 65536);
-    assert(gb.memory[rTIMA] == 1);
-
-    gb.memory[rTIMA] = 0;
-    gb.memory[rTAC] |= 3; // 16384 Hz
-    gb_tick(&gb, 1000.0 / 16384);
-    assert(gb.memory[rTIMA] == 1);
-
-    test_end
-}
-
-void test_tima_interrupt_on_overflow(void)
-{
-    test_begin
-    GameBoy gb = {0};
-    gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
-
-    gb.memory[rTIMA] = 0xFF;
-    gb.memory[rTAC] |= 0; // 4096 Hz
-    gb_tick(&gb, 1000.0 / 4096);
-    assert(gb.memory[rTIMA] == 0);
-    assert(gb.memory[rIF] & 0x04);
-
-    test_end
-}
-
 void test_render_lcd_off(void)
 {
     test_begin
@@ -1909,6 +1865,58 @@ void test_divider_register(void)
         assert(gb.memory[rDIV] == 11);
     }
 
+    // TODO: DIV is reset after a STOP instruction
+    {
+        GameBoy gb = {0};
+        gb.memory[rDIV] = 0x69;
+        Inst inst = {.data = (uint8_t*)"\x10", .size = 1};
+        gb_exec(&gb, inst);
+    }
+
+    test_end
+}
+
+void test_timer_counter_register(void)
+{
+    test_begin
+    // TIMA is incremented at the clock frequency specified by TAC
+    {
+        GameBoy gb = {0};
+        gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+
+        gb.memory[rTIMA] = 0;
+        gb.memory[rTAC] |= 0; // 4096 Hz
+        gb_tick(&gb, 1000.0 / 4096);
+        assert(gb.memory[rTIMA] == 1);
+
+        gb.memory[rTIMA] = 0;
+        gb.memory[rTAC] |= 1; // 262144 Hz
+        gb_tick(&gb, 1000.0 / 262144);
+        assert(gb.memory[rTIMA] == 1);
+
+        gb.memory[rTIMA] = 0;
+        gb.memory[rTAC] |= 2; // 65536 Hz
+        gb_tick(&gb, 1000.0 / 65536);
+        assert(gb.memory[rTIMA] == 1);
+
+        gb.memory[rTIMA] = 0;
+        gb.memory[rTAC] |= 3; // 16384 Hz
+        gb_tick(&gb, 1000.0 / 16384);
+        assert(gb.memory[rTIMA] == 1);
+    }
+
+    // TIME is reset to the value specified in TMA on overflow
+    {
+        GameBoy gb = {0};
+        gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+
+        gb.memory[rTIMA] = 0xFF;
+        gb.memory[rTAC] |= 0; // 4096 Hz
+        gb_tick(&gb, 1000.0 / 4096);
+        assert(gb.memory[rTIMA] == 0);
+        assert(gb.memory[rIF] & 0x04);
+
+    }
     test_end
 }
 
@@ -1984,9 +1992,6 @@ int main(void)
     test_cpu_instructions();
     test_cpu_timing();
 
-    test_tima_inc_rate_of_tac();
-    test_tima_interrupt_on_overflow();
-
     test_render_lcd_off();
     test_render_lcd_on_bg_on();
 
@@ -1996,7 +2001,7 @@ int main(void)
     test_p1_joypad_register();
     test_serial_transfer_data_and_control_register();
     test_divider_register();
-    //test_timer_counter_register();
+    test_timer_counter_register();
     //test_timer_modulo_register();
     //test_timer_control_register();
     //test_interrupt_flag_register();
