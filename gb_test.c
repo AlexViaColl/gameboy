@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -1787,12 +1788,12 @@ void test_cpu_timing(void)
     test_time_call_z(); // C4, CC, D4, DC
 }
 
-void test_interrupt_with_ime_not_set(void)
+void test_vblank_interrupt_with_ime_not_set(void)
 {
     test_begin
     GameBoy gb = {0};
     gb.IME = 0;
-    gb.memory[rIE] |= IEF_VBLANK; // %00000001
+    gb.memory[rIE] |= IEF_VBLANK;
 
     Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
     gb_exec(&gb, inst);
@@ -1801,18 +1802,90 @@ void test_interrupt_with_ime_not_set(void)
     test_end
 }
 
-void test_interrupt_with_ime_set(void)
+void test_vblank_interrupt_with_ime_set(void)
 {
     test_begin
     GameBoy gb = {0};
     gb.IME = 1;
-    gb.memory[rIE] |= IEF_VBLANK; // %00000001
-    gb.memory[rIF] |= IEF_VBLANK; // %00000001
+    gb.memory[rIE] |= IEF_VBLANK;
+    gb.memory[rIF] |= IEF_VBLANK;
     
     Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
     gb_exec(&gb, inst);
 
     assert(gb.PC == 0x0040);
+    test_end
+}
+
+void test_interrupts(void)
+{
+    test_vblank_interrupt_with_ime_not_set();
+    test_vblank_interrupt_with_ime_set();
+}
+
+void test_lcd_status_register(void)
+{
+    test_begin
+
+    assert(fabs(DOTS_TO_MS(MS_TO_DOTS(1.0)) - 1.0) < 0.001);
+
+    for (size_t dots = 0; dots < 100000; dots++) {
+        assert(dots == MS_TO_DOTS(DOTS_TO_MS(dots)));
+        if (dots != MS_TO_DOTS(DOTS_TO_MS(dots))) {
+            printf("%5ld dots = %10lf ms = %5ld dots\n", dots, DOTS_TO_MS(dots), MS_TO_DOTS(DOTS_TO_MS(dots)));
+        }
+    }
+
+    // Mode 2 (OAM scan)
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(0));
+        assert(gb.dots == 0);
+        assert((gb.memory[rSTAT] & 3) == 2);
+    }
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(79));
+        assert(gb.dots == 79);
+        assert((gb.memory[rSTAT] & 3) == 2);
+    }
+
+    // Mode 3 (Transfer to LCD)
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(80));
+        assert(gb.dots == 80);
+        assert((gb.memory[rSTAT] & 3) == 3);
+    }
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(251));
+        assert(gb.dots == 251);
+        assert((gb.memory[rSTAT] & 3) == 3);
+    }
+
+    // Mode 0 (HBlank)
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(252));
+        assert(gb.dots == 252);
+        assert((gb.memory[rSTAT] & 3) == 0);
+    }
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(DOTS_PER_SCANLINE - 1));
+        assert(gb.dots == DOTS_PER_SCANLINE - 1);
+        assert((gb.memory[rSTAT] & 3) == 0);
+    }
+
+    // Mode 1 (VBlank)
+    {
+        GameBoy gb = {0};
+        gb_tick(&gb, DOTS_TO_MS(144*DOTS_PER_SCANLINE));
+        assert(gb.dots == 144*DOTS_PER_SCANLINE);
+        assert((gb.memory[rSTAT] & 3) == 1);
+    }
+
     test_end
 }
 
@@ -1831,9 +1904,9 @@ int main(void)
     test_render_lcd_off();
     test_render_lcd_on_bg_on();
 
-    // Interrupts
-    test_interrupt_with_ime_not_set();
-    test_interrupt_with_ime_set();
+    test_interrupts();
+
+    test_lcd_status_register();
 
     return 0;
 }

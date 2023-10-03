@@ -2001,12 +2001,26 @@ void gb_tick(GameBoy *gb, double dt_ms)
 {
     if (gb->paused) return;
     gb->elapsed_ms += dt_ms;
-    gb->timer_sec -= dt_ms;
     gb->timer_div -= dt_ms;
     gb->timer_tima -= dt_ms;
     gb->timer_ly += dt_ms;
 
     gb->timer_mcycle += dt_ms;
+
+    gb->dots = (gb->dots + MS_TO_DOTS(dt_ms)) % DOTS_PER_FRAME;
+    uint64_t scanline_dots = (gb->dots % DOTS_PER_SCANLINE);
+    //uint8_t ly = gb->memory[rLY];
+    int ly = gb->dots / DOTS_PER_SCANLINE;
+    if (ly > 143) {
+        gb->memory[rSTAT] |= 0x1;   // Mode 1 (VBlank)
+    } else if (scanline_dots < 80) {
+        gb->memory[rSTAT] |= 0x2;   // Mode 2 (OAM scan)
+    } else if (scanline_dots < 80+172) {
+        gb->memory[rSTAT] |= 0x3;   // Mode 3 (LCD transfer)
+    } else {
+        gb->memory[rSTAT] &= ~0x3;  // Mode 0 (HBlank)
+    }
+
     Inst inst = gb_fetch_inst(gb);
 
     if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {

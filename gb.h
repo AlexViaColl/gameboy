@@ -14,6 +14,11 @@
 #define VSYNC       59.73
 #define HSYNC       9198.0  // 9.198 KHz
 
+#define DOTS_PER_FRAME      70224
+#define DOTS_PER_SCANLINE   456     // 144 frame scanlines + 10 vblank scanlines = 153
+#define DOTS_TO_MS(dots) (double)((1000.0 / (VSYNC*DOTS_PER_FRAME))*(dots))
+#define MS_TO_DOTS(ms)   (uint64_t)(((VSYNC*DOTS_PER_FRAME) / 1000.0)*(ms))
+
 // 154 scanlines (144 lines displayed and 10 lines of VBlank)
 // 4 dots per cycle (~4.194 MHz, 1 frame takes 70224 dots)
 // PPU modes:
@@ -189,12 +194,13 @@ typedef struct GameBoy {
 
     // Timers
     double elapsed_ms;  // Milliseconds elapsed since the start
-    double timer_sec;   // Timer for counting seconds
     double timer_mcycle;// Timer for counting Mcycles (~1 MHz => 1048576 Hz)
     double timer_clock;
     double timer_div;   // Ticks at 16384Hz (in ms)
     double timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
     double timer_ly;    // Ticks at ~9180 Hz (every 0.1089 ms)
+
+    uint64_t dots;      // 0-70223
 
     int (*printf)(const char *fmt, ...);
 
