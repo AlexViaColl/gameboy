@@ -267,6 +267,10 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
     if (addr == rP1/*0xFF00*/) {
         //gb->memory[addr] = value;
         gb_write_joypad_input(gb, value);
+    } else if (addr == rSB/*0xFF01*/) {
+        gb->memory[addr] = value;
+    } else if (addr == rSC/*0xFF02*/) {
+        gb->memory[rSC] = 0xFF;
     } else if (addr == rDIV/*0xFF04*/) {
         gb->memory[addr] = 0;
         fprintf(stderr, "$%04X: [DIV ] = %3d (%02X)\n", gb->PC, value, value);

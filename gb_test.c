@@ -1903,6 +1903,16 @@ void test_p1_joypad_register(void)
     test_end
 }
 
+void test_serial_transfer_data_and_control_register(void)
+{
+    test_begin
+    GameBoy gb = {0};
+    gb.memory[rSB] = 0x69;
+    gb_write_memory(&gb, rSC, 0x81); // Transfer Start | Internal Clock
+    assert(gb.memory[rSC] == 0xFF);
+    test_end
+}
+
 void test_lcd_status_register(void)
 {
     test_begin
@@ -1988,8 +1998,7 @@ int main(void)
 
     // I/O registers
     test_p1_joypad_register();
-    //test_serial_transfer_data_register();
-    //test_serial_transfer_control_register();
+    test_serial_transfer_data_and_control_register();
     //test_divider_register();
     //test_timer_counter_register();
     //test_timer_modulo_register();
