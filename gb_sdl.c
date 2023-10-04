@@ -397,8 +397,6 @@ void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
 
 void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
 {
-    if (gb->memory[rLCDC] == 0) return;
-
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
 
@@ -628,7 +626,7 @@ void emulator(const char *file_path)
         gb_tick(&gb, dt_ms);
 
         // Render
-        if (frame_ms > 16.0 && gb.memory[rLY] == 144) {
+        if (frame_ms > 16.0 && (gb.memory[rLY] == 144 || (gb.memory[rLCDC] & LCDCF_ON) == 0)) {
             sdl_render(&gb, renderer);
             frame_ms -= 16.0;
         }

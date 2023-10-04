@@ -1927,12 +1927,49 @@ void test_lcd_control_register(void)
     {
         GameBoy gb = {0};
         gb_write_memory(&gb, rLCDC, 0);
-        for (int i = 0; i < 60; i++) {
-            gb_tick(&gb, i*(1000.0 / 60.0));
+        double dt = 0.0066;
+        for (int i = 0; i < 5000; i++) {
+            gb_tick(&gb, dt);
         }
         assert(gb.memory[rLY] == 0);
         assert((gb.memory[rSTAT] & 7) == 0);
         assert(gb.memory[rLCDC] == 0);
+
+        for (size_t i = 0; i < 256*256; i++) {
+            assert(gb.display[i] == 0xFFFFFFFF);
+        }
+    }
+
+    // LCD/PPU On
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rLCDC, LCDCF_ON);
+        bool stat_00 = false;
+        bool stat_01 = false;
+        bool stat_10 = false;
+        bool stat_11 = false;
+        int min_ly = 1000000;
+        int max_ly = -1;
+        double dt = 0.0066;
+        for (int i = 0; i < 5000; i++) {
+            gb_tick(&gb, dt);
+            uint8_t stat = gb.memory[rSTAT] & 3;
+            uint8_t ly = gb.memory[rLY];
+            if (stat == 0) stat_00 = true;
+            if (stat == 1) stat_01 = true;
+            if (stat == 2) stat_10 = true;
+            if (stat == 3) stat_11 = true;
+            if (ly < min_ly) min_ly = ly;
+            if (ly > max_ly) max_ly = ly;
+        }
+        assert(stat_00 && stat_01 && stat_10 && stat_11);
+        assert(min_ly == 0);
+        assert(max_ly == 153);
+        assert(gb.memory[rLCDC] == LCDCF_ON);
+
+        for (size_t i = 0; i < 256*256; i++) {
+            assert(gb.display[i] == 0xFFFFFFFF);
+        }
     }
     test_end
 }

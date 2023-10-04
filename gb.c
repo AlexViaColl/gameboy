@@ -1765,8 +1765,16 @@ static void dump_tile(uint8_t *tile)
 static void gb_render_row(GameBoy *gb, int px_row)
 {
     uint8_t lcdc = gb->memory[rLCDC];
-    if ((lcdc & LCDCF_ON) != LCDCF_ON) return;
-    if ((lcdc & LCDCF_BGON) != LCDCF_BGON) return;
+    if (
+        (lcdc & LCDCF_ON)   != LCDCF_ON ||
+        (lcdc & LCDCF_BGON) != LCDCF_BGON
+    ) {
+        Color color = 0xFFFFFFFF;
+        for (int px_col = 0; px_col < 256; px_col++) {
+            gb->display[px_row*256 + px_col] = color;
+        }
+        return;
+    }
 
     uint16_t scx = gb->memory[rSCX];
     uint16_t scy = gb->memory[rSCY];
@@ -1990,6 +1998,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 
     //gb->memory[rLY] = 0x90;
     //gb->memory[rP1] = 0x00;
+    gb->memory[rLCDC] = 0x91;
     gb->memory[rSTAT] = 0x85;
 #endif
 
@@ -2082,6 +2091,10 @@ void gb_tick(GameBoy *gb, double dt_ms)
         }
 
         gb_render_sprites(gb);
+    } else if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
+        for (int row = 0; row < 256; row++) {
+            gb_render_row(gb, row);
+        }
     }
 
     // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
