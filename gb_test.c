@@ -1920,6 +1920,23 @@ void test_timer_counter_register(void)
     test_end
 }
 
+void test_lcd_control_register(void)
+{
+    test_begin
+    // LCD/PPU Off
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rLCDC, 0);
+        for (int i = 0; i < 60; i++) {
+            gb_tick(&gb, i*(1000.0 / 60.0));
+        }
+        assert(gb.memory[rLY] == 0);
+        assert((gb.memory[rSTAT] & 7) == 0);
+        assert(gb.memory[rLCDC] == 0);
+    }
+    test_end
+}
+
 void test_lcd_status_register(void)
 {
     test_begin
@@ -1978,6 +1995,7 @@ void test_lcd_status_register(void)
     // Mode 1 (VBlank)
     {
         GameBoy gb = {0};
+        gb.memory[rLCDC] = LCDCF_ON;
         gb_tick(&gb, DOTS_TO_MS(144*DOTS_PER_SCANLINE));
         assert(gb.dots == 144*DOTS_PER_SCANLINE);
         assert((gb.memory[rSTAT] & 3) == 1);
@@ -2006,7 +2024,7 @@ int main(void)
     //test_timer_control_register();
     //test_interrupt_flag_register();
     //test_audio_registers(); // NR10 - NR52, Wave RAM
-    //test_lcd_control_register();
+    test_lcd_control_register();
     test_lcd_status_register();
     //test_viewport_y_register();
     //test_viewport_x_register();

@@ -1990,6 +1990,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 
     //gb->memory[rLY] = 0x90;
     //gb->memory[rP1] = 0x00;
+    gb->memory[rSTAT] = 0x85;
 #endif
 
     gb->timer_div = (1000.0 / 16384.0);
@@ -2056,7 +2057,12 @@ void gb_tick(GameBoy *gb, double dt_ms)
             } else {
                 gb->memory[rSTAT] &= ~0x04;
             }
-            gb->memory[rLY] += 1;
+            if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
+                gb->memory[rLY] = 0;
+                gb->memory[rSTAT] &= 0xF8; // Clear low 3-bits
+            } else {
+                gb->memory[rLY] += 1;
+            }
             if (gb->memory[rLY] > 153) {
                 gb->memory[rIF] |= 0x01;
                 // Run this line 60 times/s (60Hz)
