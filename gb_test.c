@@ -1926,7 +1926,7 @@ void test_lcd_control_register(void)
     // LCD/PPU Off
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, 0);
+        gb_write_memory(&gb, rLCDC, LCDCF_OFF); // $00
         double dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
             gb_tick(&gb, dt);
@@ -1940,10 +1940,10 @@ void test_lcd_control_register(void)
         }
     }
 
-    // LCD/PPU On
+    // LCD/PPU On + BG Off
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_ON);
+        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BGOFF); // $80
         bool stat_00 = false;
         bool stat_01 = false;
         bool stat_10 = false;
@@ -1971,6 +1971,91 @@ void test_lcd_control_register(void)
             assert(gb.display[i] == 0xFFFFFFFF);
         }
     }
+
+    // LCD/PPU On + BG Tilemap $9800 + Tile data "$8800" addressing ($9000 base + signed addressing)
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8800|LCDCF_BGON); // $81
+
+        gb.memory[rBGP] = 0xE4; // 11|10|01|00
+
+        // Fill 2 8x8 tiles (16-bytes each)
+        int tile_idx1 = 1;
+        int tile_idx2 = -1;
+        for (int i = 0; i < 16; i++) gb.memory[0x9000 + 16*tile_idx1 + i] = 0xFF;
+        for (int i = 0; i < 16; i++) gb.memory[0x9000 + 16*tile_idx2 + i] = 0xFF;
+
+        // Set the first tilemap to the new tile
+        gb.memory[0x9800] = tile_idx1;
+        gb.memory[0x9801] = tile_idx2;
+
+        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+
+        for (size_t row = 0; row < 256; row++) {
+            for (size_t col = 0; col < 256; col++) {
+                if (row < 8 && col < 16) assert(gb.display[row*256 + col] == PALETTE[3]);
+                else assert(gb.display[row*256 + col] == PALETTE[0]);
+            }
+        }
+    }
+
+    // LCD/PPU On + BG Tilemap $9800 + Tile data "$8000" addressing
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8000|LCDCF_BGON); // $91
+
+        gb.memory[rBGP] = 0xE4; // 11|10|01|00
+
+        // Fill 2 8x8 tiles (16-bytes each)
+        int tile_idx1 = 1;
+        int tile_idx2 = 2;
+        for (int i = 0; i < 16; i++) gb.memory[0x8000 + 16*tile_idx1 + i] = 0xFF;
+        for (int i = 0; i < 16; i++) gb.memory[0x8000 + 16*tile_idx2 + i] = 0xFF;
+
+        // Set the first tilemap to the new tile
+        gb.memory[0x9800] = tile_idx1;
+        gb.memory[0x9801] = tile_idx2;
+
+        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+
+        for (size_t row = 0; row < 256; row++) {
+            for (size_t col = 0; col < 256; col++) {
+                if (row < 8 && col < 16) assert(gb.display[row*256 + col] == PALETTE[3]);
+                else assert(gb.display[row*256 + col] == PALETTE[0]);
+            }
+        }
+    }
+
+    // LCD/PPU On + BG Tilemap $9C00 + Tile data "$8000" addressing
+    {
+        GameBoy gb = {0};
+        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9C00|LCDCF_BG8000|LCDCF_BGON); // $99
+
+        gb.memory[rBGP] = 0xE4; // 11|10|01|00
+
+        // Fill 2 8x8 tiles (16-bytes each)
+        int tile_idx1 = 1;
+        int tile_idx2 = 2;
+        for (int i = 0; i < 16; i++) gb.memory[0x8000 + 16*tile_idx1 + i] = 0xFF;
+        for (int i = 0; i < 16; i++) gb.memory[0x8000 + 16*tile_idx2 + i] = 0xFF;
+
+        // Set the first tilemap to the new tile
+        gb.memory[0x9C00] = tile_idx1;
+        gb.memory[0x9C01] = tile_idx2;
+
+        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+
+        for (size_t row = 0; row < 256; row++) {
+            for (size_t col = 0; col < 256; col++) {
+                if (row < 8 && col < 16) assert(gb.display[row*256 + col] == PALETTE[3]);
+                else assert(gb.display[row*256 + col] == PALETTE[0]);
+            }
+        }
+    }
+
+    // LCD/PPU On + OBJ On
+    // OBJ 8x16
+
     test_end
 }
 
