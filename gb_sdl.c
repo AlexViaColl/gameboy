@@ -8,6 +8,7 @@
 #include "gb.h"
 
 #define SCALE  8
+#define SAMPLE_RATE 48000
 
 // RRGGBBAA
 #define HEX_TO_COLOR(x) (x >> 24)&0xff, (x >> 16)&0xff, (x >> 8)&0xff, (x)&0xff
@@ -33,6 +34,7 @@ typedef enum ViewerType {
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
+static SDL_AudioDeviceID device;
 static ViewerType viewer_type = VT_GAME;
 
 static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
@@ -448,7 +450,7 @@ bool cstr_ends_with(const char *src, const char *end) {
 
 void sdl_init(void)
 {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
     }
@@ -466,6 +468,44 @@ void sdl_init(void)
         fprintf(stderr, "Failed to create renderer\n");
         exit(1);
     }
+
+    SDL_AudioSpec audio_spec;
+    int sample_rate = SAMPLE_RATE;
+    SDL_AudioSpec desired_spec = {
+        .freq = sample_rate,
+        .format = AUDIO_F32LSB,
+        .samples = 1024,
+        .channels = 1,
+    };
+    device = SDL_OpenAudioDevice(NULL, 0, &desired_spec, &audio_spec, SDL_AUDIO_ALLOW_ANY_CHANGE);
+    if (!device) {
+        fprintf(stderr, "Failed to open audio device\n");
+        exit(1);
+    }
+
+    printf("AudioSpec:\n  freq: %d\n  format: %d\n  channels: %d\n  samples: %d\n  size: %d\n",
+        audio_spec.freq, audio_spec.format, audio_spec.channels, audio_spec.samples, audio_spec.size);
+}
+
+void play_square_wave(int freq, int ms)
+{
+    // 48000 samples    => 1 s      => 1000 ms
+    //   120 samples    => 1/400 s  => 1000/400 ms
+    int samples_per_cycle = (float)SAMPLE_RATE / (float)freq;
+    int samples_half_cycle = samples_per_cycle / 2;
+
+    int sample_count = (ms*SAMPLE_RATE) / 1000;
+    assert(sample_count < 48000);
+
+    float samples[48000] = {0};
+    for (int i = 0; i < sample_count; i++) {
+        float sample = (i % samples_per_cycle) < samples_half_cycle ? 1.0f : 0.0f;
+        samples[i] = sample;
+    }
+
+    SDL_QueueAudio(device, samples, sample_count * sizeof(samples[0]));
+
+    SDL_PauseAudioDevice(device, 0);
 }
 
 void tile_viewer(const char *file_path)
@@ -551,6 +591,7 @@ void emulator(const char *file_path)
                     break;
                 case SDLK_SPACE:
                     if (e.key.type == SDL_KEYDOWN) {
+                        play_square_wave(440, 100);
                         gb_dump(&gb);
                         printf("BG tilemap $9800-$9BFF:\n");
                         for (int row = 0; row < 32; row++) {
