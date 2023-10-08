@@ -10,6 +10,7 @@ build_rom()
     rm "$1.o"
 }
 
+build_rom "stop"
 build_rom "test"
 
 build_rom "hello"
