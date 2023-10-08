@@ -9,6 +9,7 @@
 
 #define SCALE  8
 #define SAMPLE_RATE 48000
+#define VOLUME 0.25
 
 // RRGGBBAA
 #define HEX_TO_COLOR(x) (x >> 24)&0xff, (x >> 16)&0xff, (x >> 8)&0xff, (x)&0xff
@@ -487,19 +488,41 @@ void sdl_init(void)
         audio_spec.freq, audio_spec.format, audio_spec.channels, audio_spec.samples, audio_spec.size);
 }
 
-void play_square_wave(int freq, int ms)
+void play_square_wave(int freq, int ms, int duty_cycle)
 {
+    // 46.875 ms => How many samples ?
+    int samples_per_sweep = 2250;
+
     // 48000 samples    => 1 s      => 1000 ms
     //   120 samples    => 1/400 s  => 1000/400 ms
     int samples_per_cycle = (float)SAMPLE_RATE / (float)freq;
-    int samples_half_cycle = samples_per_cycle / 2;
+    int samples_high;
+    switch (duty_cycle) {
+        case 0:
+            samples_high = samples_per_cycle * 0.875;
+            break;
+        case 1:
+            samples_high = samples_per_cycle * 0.75;
+            break;
+        case 2:
+            samples_high = samples_per_cycle * 0.5;
+            break;
+        case 3:
+            samples_high = samples_per_cycle * 0.25;
+            break;
+        default: assert(0 && "Duty cycle mode not supported");
+    }
 
     int sample_count = (ms*SAMPLE_RATE) / 1000;
     assert(sample_count < 48000);
-
     float samples[48000] = {0};
     for (int i = 0; i < sample_count; i++) {
-        float sample = (i % samples_per_cycle) < samples_half_cycle ? 1.0f : 0.0f;
+        float sample = (i % samples_per_cycle) < samples_high ? 1.0f : 0.0f;
+        sample *= VOLUME;
+
+        int sweep_index = i / samples_per_sweep;
+        sample *= ((16.0f - sweep_index) / 16.0f);
+
         samples[i] = sample;
     }
 
@@ -589,9 +612,20 @@ void emulator(const char *file_path)
                         //if (gb.paused) gb.step_debug = true;
                     }
                     break;
+                case SDLK_1:
+                    if (e.key.type == SDL_KEYDOWN) play_square_wave(1048, 100, 2);
+                    break;
+                case SDLK_2:
+                    if (e.key.type == SDL_KEYDOWN) play_square_wave(2080, 900, 2);
+                    break;
+                case SDLK_3:
+                    if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 2);
+                    break;
+                case SDLK_4:
+                    if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 3);
+                    break;
                 case SDLK_SPACE:
                     if (e.key.type == SDL_KEYDOWN) {
-                        play_square_wave(440, 100);
                         gb_dump(&gb);
                         printf("BG tilemap $9800-$9BFF:\n");
                         for (int row = 0; row < 32; row++) {

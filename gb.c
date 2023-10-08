@@ -28,7 +28,7 @@ BACKLOG:
 */
 
 const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
-//static const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
+//const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
 
 // Debug Status
 static size_t bp_count = 0;
@@ -345,6 +345,30 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         memcpy(gb->memory + 0xFE00, gb->memory + src, 0x9F);
         gb->memory[addr] = value;
         //fprintf(stderr, "$%04X: [DMA ] = %3d (%02X)\n", gb->PC, value, value);
+    } else if (addr == rNR52/*0xFF26*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR51/*0xFF25*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR50/*0xFF24*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR11/*0xFF11*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR12/*0xFF12*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR13/*0xFF13*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr == rNR14/*0xFF14*/) {
+        fprintf(stderr, "$%04X: %02X\n", addr, value);
+        gb->memory[addr] = value;
+    } else if (addr >= 0xFF30 && addr <= 0xFF3F) {
+        gb->memory[addr] = value;
+        //fprintf(stderr, "$%04X: %02X\n", addr, value);
     } else {
         gb->memory[addr] = value;
     }
