@@ -4,13 +4,15 @@ set -e
 
 build_rom()
 {
-    rgbasm -L -o "$1.o" "$1.asm"
+    rgbasm -L -H -o "$1.o" "$1.asm"
     rgblink -o "$1.gb" "$1.o"
     rgbfix -v -p 0xFF "$1.gb"
     rm "$1.o"
 }
 
 build_rom "stop"
+build_rom "halt"
+
 build_rom "test"
 
 build_rom "hello"
