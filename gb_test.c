@@ -1889,7 +1889,7 @@ void test_timer_counter_register(void)
     // TIMA is incremented at the clock frequency specified by TAC
     {
         GameBoy gb = {0};
-        gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+        gb.memory[rTAC] |= 0x04; // Timer Enable
 
         gb.memory[rTIMA] = 0;
         gb.memory[rTAC] |= 0; // 4096 Hz
@@ -1915,7 +1915,7 @@ void test_timer_counter_register(void)
     // TIME is reset to the value specified in TMA on overflow
     {
         GameBoy gb = {0};
-        gb.memory[rTAC/*FF07*/] |= 0x04; // Timer Enable
+        gb.memory[rTAC] |= 0x04; // Timer Enable
 
         gb.memory[rTIMA] = 0xFF;
         gb.memory[rTAC] |= 0; // 4096 Hz
