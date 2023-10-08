@@ -63,18 +63,23 @@ extern const Color PALETTE[4];
 #define rNR12   0xFF12 // Sound channel 1 volume & envelope
 #define rNR13   0xFF13 // Sound channel 1 period low
 #define rNR14   0xFF14 // Sound channel 1 period high & control
+
 #define rNR21   0xFF16 // Sound channel 2 length timer & duty cycle
-#define rNR22   0xFF17 // Sound channel 2 volume & envelope #define rNR23   0xFF18 // Sound channel 2 period low
+#define rNR22   0xFF17 // Sound channel 2 volume & envelope
+#define rNR23   0xFF18 // Sound channel 2 period low
 #define rNR24   0xFF19 // Sound channel 2 period high & control
+
 #define rNR30   0xFF1A // Sound channel 3 DAC enable
 #define rNR31   0xFF1B // Sound channel 3 length timer
 #define rNR32   0xFF1C // Sound channel 3 output level
 #define rNR33   0xFF1D // Sound channel 3 period low
 #define rNR34   0xFF1E // Sound channel 3 period high & control
+
 #define rNR41   0xFF20 // Sound channel 4 length timer
 #define rNR42   0xFF21 // Sound channel 4 volume & envelope
 #define rNR43   0xFF22 // Sound channel 4 frequency & randomness
 #define rNR44   0xFF23 // Sound channel 4 control
+
 #define rNR50   0xFF24 // Master volume & VIN panning
 #define rNR51   0xFF25 // Sound panning
 #define rNR52   0xFF26 // Sound on/off
@@ -262,8 +267,8 @@ void gb_render(GameBoy *gb);
 
 void gb_dump(const GameBoy *gb);
 
-uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr);
-void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value);
+uint8_t gb_mem_read(const GameBoy *gb, uint16_t addr);
+void gb_mem_write(GameBoy *gb, uint16_t addr, uint8_t value);
 
 uint8_t gb_get_flag(const GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);

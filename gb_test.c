@@ -1065,7 +1065,7 @@ void test_inst_add_a_hl_mem(void)
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, REG_A, 0xFF);
     gb.HL = 0xC000;
-    gb_write_memory(&gb, gb.HL, 0x01);
+    gb_mem_write(&gb, gb.HL, 0x01);
     // A = FF
     // +   01
     // ------
@@ -1756,42 +1756,42 @@ void test_p1_joypad_register(void)
     // No buttons pressed
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xCF);
     }
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        gb_mem_write(&gb, rP1, P1F_GET_DPAD);
         assert(gb.memory[rP1] == 0xCF);
     }
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rP1, P1F_GET_NONE);
+        gb_mem_write(&gb, rP1, P1F_GET_NONE);
         assert(gb.memory[rP1] == 0xCF);
     }
     // Action buttons (single)
     {
         GameBoy gb = {0};
         gb.button_a = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xCE/*11|00|1110*/);
     }
     {
         GameBoy gb = {0};
         gb.button_b = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xCD/*11|00|1101*/);
     }
     {
         GameBoy gb = {0};
         gb.button_select = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xCB/*11|00|1011*/);
     }
     {
         GameBoy gb = {0};
         gb.button_start = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xC7/*11|00|0111*/);
     }
     // Action buttons (multi)
@@ -1799,32 +1799,32 @@ void test_p1_joypad_register(void)
         GameBoy gb = {0};
         gb.button_a = 1;
         gb.button_b = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_BTN);
+        gb_mem_write(&gb, rP1, P1F_GET_BTN);
         assert(gb.memory[rP1] == 0xCC/*11|00|1100*/);
     }
     // Direction buttons (single)
     {
         GameBoy gb = {0};
         gb.dpad_right = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        gb_mem_write(&gb, rP1, P1F_GET_DPAD);
         assert(gb.memory[rP1] == 0xCE/*11|00|1110*/);
     }
     {
         GameBoy gb = {0};
         gb.dpad_left = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        gb_mem_write(&gb, rP1, P1F_GET_DPAD);
         assert(gb.memory[rP1] == 0xCD/*11|00|1101*/);
     }
     {
         GameBoy gb = {0};
         gb.dpad_up = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        gb_mem_write(&gb, rP1, P1F_GET_DPAD);
         assert(gb.memory[rP1] == 0xCB/*11|00|1011*/);
     }
     {
         GameBoy gb = {0};
         gb.dpad_down = 1;
-        gb_write_memory(&gb, rP1, P1F_GET_DPAD);
+        gb_mem_write(&gb, rP1, P1F_GET_DPAD);
         assert(gb.memory[rP1] == 0xC7/*11|00|0111*/);
     }
     test_end
@@ -1835,7 +1835,7 @@ void test_serial_transfer_data_and_control_register(void)
     test_begin
     GameBoy gb = {0};
     gb.memory[rSB] = 0x69;
-    gb_write_memory(&gb, rSC, 0x81); // Transfer Start | Internal Clock
+    gb_mem_write(&gb, rSC, 0x81); // Transfer Start | Internal Clock
     assert(gb.memory[rSC] == 0xFF);
     test_end
 }
@@ -1848,7 +1848,7 @@ void test_divider_register(void)
     {
         GameBoy gb = {0};
         gb.memory[rDIV/*FF04*/] = 0x69;
-        gb_write_memory(&gb, rDIV/*FF04*/, 1);
+        gb_mem_write(&gb, rDIV/*FF04*/, 1);
         assert(gb.memory[rDIV/*FF04*/] == 0);
     }
 
@@ -1926,7 +1926,7 @@ void test_lcd_control_register(void)
     // LCD/PPU Off
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_OFF); // $00
+        gb_mem_write(&gb, rLCDC, LCDCF_OFF); // $00
         double dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
             gb_tick(&gb, dt);
@@ -1943,7 +1943,7 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Off
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BGOFF); // $80
+        gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BGOFF); // $80
         bool stat_00 = false;
         bool stat_01 = false;
         bool stat_10 = false;
@@ -1975,7 +1975,7 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9800 + Tile data "$8800" addressing ($9000 base + signed addressing)
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8800|LCDCF_BGON); // $81
+        gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8800|LCDCF_BGON); // $81
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00
 
@@ -2002,7 +2002,7 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9800 + Tile data "$8000" addressing
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8000|LCDCF_BGON); // $91
+        gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8000|LCDCF_BGON); // $91
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00
 
@@ -2029,7 +2029,7 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9C00 + Tile data "$8000" addressing
     {
         GameBoy gb = {0};
-        gb_write_memory(&gb, rLCDC, LCDCF_ON|LCDCF_BG9C00|LCDCF_BG8000|LCDCF_BGON); // $99
+        gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9C00|LCDCF_BG8000|LCDCF_BGON); // $99
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00
 

@@ -56,7 +56,6 @@ typedef struct RomHeader {
 } RomHeader;
 
 uint8_t *read_entire_file(const char *path, size_t *size);
-bool get_command(GameBoy *gb);
 
 void gb_dump(const GameBoy *gb)
 {
@@ -85,13 +84,14 @@ void gb_dump(const GameBoy *gb)
         gb->memory[gb->PC+2]);
 }
 
-uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr)
+uint8_t gb_mem_read(const GameBoy *gb, uint16_t addr)
 {
     return gb->memory[addr];
 }
 
-void gb_write_joypad_input(GameBoy *gb, uint8_t value)
+void gb_joypad_write(GameBoy *gb, uint16_t addr, uint8_t value)
 {
+    assert(addr == rP1);
     gb->memory[rP1] |= 0xC0;
 
     if (value == P1F_GET_BTN) {
@@ -141,56 +141,58 @@ void gb_write_joypad_input(GameBoy *gb, uint8_t value)
     }
 }
 
-void gb_write_timer(GameBoy *gb, uint16_t addr, uint8_t value)
+void gb_serial_write(GameBoy *gb, uint16_t addr, uint8_t value)
 {
-    switch (addr) {
-        case rDIV:
-            //printf("write timer: [rDIV %04X] = %02X\n", addr, value);
-            gb->memory[rDIV] = 0; // Reset
-            break;
-        case rTIMA:
-            //printf("write timer: [rTIMA %04X] = %02X\n", addr, value);
-            //assert(0);
-            break;
-        case rTMA: {
-            // 00 -> Interrupt every 256 increments of TAC
-            // 01 -> Interrupt every 255 increments of TAC
-            // ...
-            // BF -> Interrupt every ? increments of TAC
-            // ...
-            // FE -> Interrupt every 2 increments of TAC
-            // FF -> Interrupt every increment of TAC
-            //int modulo = 0x100 - value;
-            //printf("write timer: [rTMA %04X] = %02X\n", addr, value);
-            //printf("Interrupt every %d increments of TAC\n", modulo);
-            gb->memory[rTMA] = value;
-        } break;
-        case rTAC:
-            if (value & 0x04) {
-                int clock_select;
-                switch (value & 0x03) {
-                    case 0:
-                        clock_select = 1024;
-                        break;
-                    case 1:
-                        clock_select = 16;
-                        break;
-                    case 2:
-                        clock_select = 64;
-                        break;
-                    case 3:
-                        clock_select = 256;
-                        break;
-                }
-                (void)clock_select;
-                //printf("write timer: [rTAC %04X] = %02X\n", addr, value);
-                //printf("Enabling Timer at CPU Clock / %d = %d Hz\n",
-                //    clock_select, (int)(CPU_FREQ / clock_select));
-                //assert(0);
-            }
-            gb->memory[rTAC] = value;
-            break;
-        default: assert(0 && "Unreachable");
+    assert(addr == rSB || addr == rSC);
+    if (0) {}
+    else if (addr == rSB) gb->memory[addr] = value;
+    else if (addr == rSC) gb->memory[addr] = 0xff;
+}
+
+void gb_timer_write(GameBoy *gb, uint16_t addr, uint8_t value)
+{
+    assert(addr == rDIV || addr == rTIMA || addr == rTMA || addr == rTAC);
+    if (0) {}
+    else if (addr == rDIV)  gb->memory[addr] = 0;
+    else if (addr == rTIMA) gb->memory[addr] = value;
+    else if (addr == rTMA)  gb->memory[addr] = value;
+    else if (addr == rTAC)  gb->memory[addr] = value;
+}
+
+void gb_apu_write(GameBoy *gb, uint16_t addr, uint8_t value)
+{
+    bool is_ch1 = addr >= rNR10 && addr <= rNR14;
+    bool is_ch2 = addr >= rNR21 && addr <= rNR24;
+    bool is_ch3 = addr >= rNR30 && addr <= rNR34;
+    bool is_ch4 = addr >= rNR41 && addr <= rNR44;
+    bool is_wave = addr >= 0xff30 && addr <= 0xff3f;
+    assert(is_ch1 || is_ch2 || is_ch3 || is_ch4 || is_wave ||
+        addr == rNR50 || addr == rNR51 || addr == rNR52);
+
+    gb->memory[addr] = value;
+}
+
+void gb_ppu_write(GameBoy *gb, uint16_t addr, uint8_t value)
+{
+    assert(addr == rLCDC || addr == rSTAT || addr == rSCY || addr == rSCX ||
+        addr == rLY || addr == rLYC || addr == rDMA ||
+        addr == rBGP || addr == rOBP0 || addr == rOBP1 || addr == rWY || addr == rWX);
+
+    if (addr == rLCDC || addr == rSTAT) {
+        gb->memory[addr] = value;
+    } else if (addr == rSCY || addr == rSCX) {
+        gb->memory[addr] = value;
+    } else if (addr == rLY) {
+        gb->memory[addr] = value;
+    } else if (addr == rDMA) {
+        assert(value <= 0xdf);
+        uint16_t src = value << 8;
+        memcpy(gb->memory + 0xfe00, gb->memory + src, 0x9f);
+        gb->memory[addr] = value;
+    } else if (addr == rBGP || addr == rOBP0 || addr == rOBP1) {
+        gb->memory[addr] = value;
+    } else if (addr == rWY || addr == rWX) {
+        gb->memory[addr] = value;
     }
 }
 
@@ -205,13 +207,112 @@ static int gb_clock_freq(int clock)
     assert(0 && "Unreachable");
 }
 
-void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
+void gb_io_write(GameBoy *gb, uint16_t addr, uint8_t value)
 {
-    if (addr == 0xFFA4 && value != 0) {
-        printf("$%04X: [$FFA4] = $%02X\n", gb->PC, value);
-        //assert(0);
-    }
+    assert((addr >= 0xff00 && addr <= 0xff7f) || addr == 0xffff);
 
+    switch (addr) {
+        // Joypad
+        case rP1: gb_joypad_write(gb, addr, value); break;
+
+        // Serial transfer
+        case rSB:
+        case rSC: gb_serial_write(gb, addr, value); break;
+
+        // Timer
+        case rDIV:
+        case rTIMA:
+        case rTMA:
+        case rTAC: gb_timer_write(gb, addr, value); break;
+
+        // Interrupt flag
+        case rIF: gb->memory[addr] = value; break;
+
+        // APU
+        case rNR10:
+        case rNR11:
+        case rNR12:
+        case rNR13:
+        case rNR14: gb_apu_write(gb, addr, value); break;
+
+        case rNR21:
+        case rNR22:
+        case rNR23:
+        case rNR24: gb_apu_write(gb, addr, value); break;
+
+        case rNR30:
+        case rNR31:
+        case rNR32:
+        case rNR33:
+        case rNR34: gb_apu_write(gb, addr, value); break;
+
+        case rNR41:
+        case rNR42:
+        case rNR43:
+        case rNR44: gb_apu_write(gb, addr, value); break;
+
+        case rNR50:
+        case rNR51:
+        case rNR52: gb_apu_write(gb, addr, value); break;
+
+        case 0xff30:
+        case 0xff31:
+        case 0xff32:
+        case 0xff33:
+        case 0xff34:
+        case 0xff35:
+        case 0xff36:
+        case 0xff37:
+        case 0xff38:
+        case 0xff39:
+        case 0xff3a:
+        case 0xff3b:
+        case 0xff3c:
+        case 0xff3d:
+        case 0xff3e:
+        case 0xff3f: gb_apu_write(gb, addr, value); break;
+
+        // PPU
+        case rLCDC:
+        case rSTAT:
+        case rSCY:
+        case rSCX:
+        case rLY:
+        case rLYC:
+        case rDMA:
+        case rBGP:
+        case rOBP0:
+        case rOBP1:
+        case rWY:
+        case rWX: gb_ppu_write(gb, addr, value); break;
+
+        // CGB specific
+        case 0xff4d: break; // KEY1
+        case 0xff4f: break; // VBK
+        case 0xff51: break; // HDMA1
+        case 0xff52: break; // HDMA2
+        case 0xff53: break; // HDMA3
+        case 0xff54: break; // HDMA4
+        case 0xff55: break; // HDMA5
+        case 0xff56: break; // RP
+        case 0xff68: break; // BCPS/BGPI
+        case 0xff69: break; // BCPD/BGPD
+        case 0xff6a: break; // OCPS/OBPI
+        case 0xff6b: break; // OCPD/OBPD
+        case 0xff6c: break; // OBPRI
+        case 0xff70: break; // SVBK
+        case 0xff76: break; // PCM12
+        case 0xff77: break; // PCM34
+
+        // Interrupt enable
+        case rIE:   gb->memory[addr] = value; break;
+
+        default: break; // assert(0 && "Unreachable");
+    }
+}
+
+void gb_mem_write(GameBoy *gb, uint16_t addr, uint8_t value)
+{
     // No MBC (32 KiB ROM only)
     if (gb->cart_type == 0) {
         if (addr <= 0x7FFF) return;
@@ -222,23 +323,23 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
     else if (gb->cart_type == 1 || gb->cart_type == 3 || gb->cart_type == 0x13) {
         if (addr <= 0x1FFF) {
             if ((value & 0xF) == 0xA) {
-                fprintf(stderr, "RAM Enable\n");
+                //fprintf(stderr, "RAM Enable\n");
                 gb->ram_enabled = true;
                 //assert(0);
             } else {
-                fprintf(stderr, "RAM Disable\n");
+                //fprintf(stderr, "RAM Disable\n");
                 gb->ram_enabled = false;
             }
         } else if (addr <= 0x3FFF) {
             value = value & 0x1F; // Consider only lower 5-bits
             if (value == 0) value = 1;
             gb->rom_bank_num = value % gb->rom_bank_count;
-            fprintf(stderr, "$%04X: ROM Bank Number: %02X\n", gb->PC, gb->rom_bank_num);
+            //fprintf(stderr, "$%04X: ROM Bank Number: %02X\n", gb->PC, gb->rom_bank_num);
             memcpy(gb->memory+0x4000, gb->rom + gb->rom_bank_num*0x4000, 0x4000);
         } else if (addr <= 0x5FFF) {
             //fprintf(stderr, "RAM Bank Number\n");
         } else if (addr <= 0x7FFF) {
-            fprintf(stderr, "Banking Mode Select\n");
+            //fprintf(stderr, "Banking Mode Select\n");
         }
 
         if (addr <= 0x7FFF) return;
@@ -248,113 +349,54 @@ void gb_write_memory(GameBoy *gb, uint16_t addr, uint8_t value)
         assert(0 && "MBC X is not supported yet!");
     }
 
-    if (addr == rP1/*0xFF00*/) {
-        //gb->memory[addr] = value;
-        gb_write_joypad_input(gb, value);
-    } else if (addr == rSB/*0xFF01*/) {
+    if (0) {}
+    // 16 KiB ROM bank 00
+    else if (addr >= 0x0000 && addr <= 0x3fff) {
+        assert(0 && "Unreachable");
+    }
+    // 16 KiB ROM Bank 01~NN
+    else if (addr >= 0x4000 && addr <= 0x7fff) {
+        assert(0 && "Unreachable");
+    }
+    // 8 KiB Video RAM (VRAM)
+    else if (addr >= 0x8000 && addr <= 0x9fff) {
         gb->memory[addr] = value;
-    } else if (addr == rSC/*0xFF02*/) {
-        gb->memory[rSC] = 0xFF;
-    } else if (addr == rDIV/*0xFF04*/) {
-        gb->memory[addr] = 0;
-        fprintf(stderr, "$%04X: [DIV ] = %3d (%02X)\n", gb->PC, value, value);
-    } else if (addr == rTIMA/*0xFF05*/) {
+    }
+    // 8 KiB External RAM (Cartridge)
+    else if (addr >= 0xa000 && addr <= 0xbfff) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TIMA] = %3d (%02X)\n", gb->PC, value, value);
-    } else if (addr == rTMA/*0xFF06*/) {
+    }
+    // 4 KiB Work RAM (WRAM)
+    else if (addr >= 0xc000 && addr <= 0xcfff) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TMA ] = %3d (%02X)\n", gb->PC, value, value);
-    } else if (addr == rTAC/*0xFF07*/) {
+    }
+    // 4 KiB Work RAM (WRAM)
+    else if (addr >= 0xd000 && addr <= 0xdfff) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [TAC ] = %3d (%02X)", gb->PC, value, value);
-        if (value & 0x04) {
-            uint8_t clock = value & 3;
-            fprintf(stderr, " Enable %02X %d Hz\n", clock, gb_clock_freq(clock));
-        } else {
-            fprintf(stderr, " Disable\n");
-        }
-    } else if (addr == rIF/*0xFF0F*/) {
+    }
+    // Mirror of $c000~$ddff (ECHO RAM)
+    else if (addr >= 0xe000 && addr <= 0xfdff) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [IF  ] = %3d (%02X)", gb->PC, value, value);
-        if (value & IEF_HILO)   fprintf(stderr, " | IEF_HILO");
-        if (value & IEF_SERIAL) fprintf(stderr, " | IEF_SERIAL");
-        if (value & IEF_TIMER)  fprintf(stderr, " | IEF_TIMER");
-        if (value & IEF_STAT)   fprintf(stderr, " | IEF_STAT");
-        if (value & IEF_VBLANK) fprintf(stderr, " | IEF_VBLANK");
-        fprintf(stderr, "\n");
-    } else if (addr == rIE/*0xFFFF*/) {
+    }
+    // Object attribute memory (OAM)
+    else if (addr >= 0xfe00 && addr <= 0xfe9f) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [IE  ] = %3d (%02X)", gb->PC, value, value);
-        if (value & IEF_HILO)   fprintf(stderr, " | IEF_HILO");
-        if (value & IEF_SERIAL) fprintf(stderr, " | IEF_SERIAL");
-        if (value & IEF_TIMER)  fprintf(stderr, " | IEF_TIMER");
-        if (value & IEF_STAT)   fprintf(stderr, " | IEF_STAT");
-        if (value & IEF_VBLANK) fprintf(stderr, " | IEF_VBLANK");
-        fprintf(stderr, "\n");
-    } else if (addr == rLCDC/*0xFF40*/) {
+    }
+    // Not Usable
+    else if (addr >= 0xfea0 && addr <= 0xfeff) {
+        //assert(0 && "Not Usable memory");
+    }
+    // I/O Registers
+    else if (addr >= 0xff00 && addr <= 0xff7f) {
+        gb_io_write(gb, addr, value);
+    }
+    // High RAM (HRAM)
+    else if (addr >= 0xff80 && addr <= 0xfffe) {
         gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [LCDC] = %3d (%02X)", gb->PC, value, value);
-        if (value & LCDCF_ON)       fprintf(stderr, " | LCDCF_ON");
-        if (value & LCDCF_WIN9800)  fprintf(stderr, " | LCDCF_WIN9800");
-        if (value & LCDCF_WINON)    fprintf(stderr, " | LCDCF_WINON");
-        if (value & LCDCF_BG8000)   fprintf(stderr, " | LCDCF_BG8000");
-        if (value & LCDCF_BG9C00)   fprintf(stderr, " | LCDCF_BG9C00");
-        if (value & LCDCF_OBJ16)    fprintf(stderr, " | LCDCF_OBJ16");
-        if (value & LCDCF_OBJON)    fprintf(stderr, " | LCDCF_OBJON");
-        if (value & LCDCF_BGON)     fprintf(stderr, " | LCDCF_BGON");
-        fprintf(stderr, "\n");
-    } else if (addr == rSTAT/*0xFF41*/) {
-        gb->memory[addr] = value;
-        fprintf(stderr, "$%04X: [STAT] = %3d (%02X)", gb->PC, value, value);
-        if (value & 0x08)       fprintf(stderr, " | HBlank STAT interrupt enabled");
-        if (value & 0x10)       fprintf(stderr, " | VBlank STAT interrupt enabled");
-        if (value & 0x20)       fprintf(stderr, " | OAM STAT interrupt enabled");
-        if (value & 0x40)       fprintf(stderr, " | LYC=LY STAT interrupt enabled (LYC=%02X)", gb->memory[rLYC]);
-        fprintf(stderr, "\n");
-        //if (value != 0) assert(0);
-    } else if (addr == rSCY/*0xFF42*/ || addr == rSCX/*0xFF43*/) {
-        if (gb->memory[addr] == value) return;
-        // TODO: This is a hack to prevent a glitch where the frame is renderer twice
-        // once with SCX = 0 and another time with SCX != 0
-        //if (gb->memory[rLY] < 0xF) return;
-        fprintf(stderr, "$%04X: [%s ] = %3d (%02X)\n", gb->PC, addr == rSCY ? "SCY" : "SCX", value, value);
-        fprintf(stderr, "LY=%02X\n", gb->memory[rLY]);
-        gb->memory[addr] = value;
-    } else if (addr == rLYC/*0xFF45*/) {
-        fprintf(stderr, "$%04X: [LCY ] = %3d (%02X)\n", gb->PC, value, value);
-        gb->memory[addr] = value;
-    } else if (addr == rDMA/*0xFF46*/) {
-        assert(value <= 0xDF);
-        uint16_t src = value << 8;
-        memcpy(gb->memory + 0xFE00, gb->memory + src, 0x9F);
-        gb->memory[addr] = value;
-        //fprintf(stderr, "$%04X: [DMA ] = %3d (%02X)\n", gb->PC, value, value);
-    } else if (addr == rNR52/*0xFF26*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR51/*0xFF25*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR50/*0xFF24*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR11/*0xFF11*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR12/*0xFF12*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR13/*0xFF13*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr == rNR14/*0xFF14*/) {
-        fprintf(stderr, "$%04X: %02X\n", addr, value);
-        gb->memory[addr] = value;
-    } else if (addr >= 0xFF30 && addr <= 0xFF3F) {
-        gb->memory[addr] = value;
-        //fprintf(stderr, "$%04X: %02X\n", addr, value);
-    } else {
-        gb->memory[addr] = value;
+    }
+    // Interrupt Enable register (IE)
+    else if (addr >= 0xffff && addr <= 0xffff) {
+        gb_io_write(gb, addr, value);
     }
 }
 
@@ -471,7 +513,7 @@ void gb_set_reg(GameBoy *gb, Reg8 r8, uint8_t value)
             gb->HL |= (value << 0);
             break;
         case REG_HL_MEM/*6*/:
-            gb_write_memory(gb, gb->HL, value);
+            gb_mem_write(gb, gb->HL, value);
             break;
         case REG_A/*7*/:
             gb->AF &= 0x00ff;
@@ -499,7 +541,7 @@ uint8_t gb_get_reg(const GameBoy *gb, Reg8 r8)
         case REG_L/*5*/:
             return (gb->HL & 0xff);
         case REG_HL_MEM/*6*/:
-            return gb_read_memory(gb, gb->HL);
+            return gb_mem_read(gb, gb->HL);
         case REG_A/*7*/:
             return (gb->AF >> 8);
         default:
@@ -567,7 +609,7 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
 
 Inst gb_fetch_inst(const GameBoy *gb)
 {
-    uint8_t b = gb_read_memory(gb, gb->PC);
+    uint8_t b = gb_mem_read(gb, gb->PC);
     const uint8_t *data = &gb->memory[gb->PC];
 
     if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
@@ -643,7 +685,7 @@ Inst gb_fetch_inst(const GameBoy *gb)
 
     // Prefix CB
     else if (b == 0xCB) {
-        uint8_t b2 = gb_read_memory(gb, gb->PC+1);
+        uint8_t b2 = gb_mem_read(gb, gb->PC+1);
         uint8_t cycles = (b2 & 7) == 6 ? 16 : 8;
         return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     }
@@ -904,9 +946,6 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
 void gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
-    if (gb->PC == 0x0048) {
-        fprintf(stderr, "$%04X: STAT interrupt handler\n", gb->PC);
-    }
 
     uint8_t IE = gb->memory[rIE];
     uint8_t IF = gb->memory[rIF];
@@ -919,8 +958,8 @@ void gb_exec(GameBoy *gb, Inst inst)
         // VBlank Interrupt
         if (((IF & 0x01) == 0x01) && ((IE & 0x01) == 0x01)) {
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
-            gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
+            gb_mem_write(gb, gb->SP+0, gb->PC & 0xff);
+            gb_mem_write(gb, gb->SP+1, gb->PC >> 8);
             gb->PC = 0x0040;
 
             // Clear IME and corresponding bit of IF
@@ -934,8 +973,8 @@ void gb_exec(GameBoy *gb, Inst inst)
         // STAT Interrupt
         if (((IF & 0x02) == 0x02) && ((IE & 0x02) == 0x02)) {
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
-            gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
+            gb_mem_write(gb, gb->SP+0, gb->PC & 0xff);
+            gb_mem_write(gb, gb->SP+1, gb->PC >> 8);
             gb->PC = 0x0048;
 
             // Clear IME and corresponding bit of IF
@@ -951,8 +990,8 @@ void gb_exec(GameBoy *gb, Inst inst)
             if (gb->halted) gb->halted = false;
 
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
-            gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
+            gb_mem_write(gb, gb->SP+0, gb->PC & 0xff);
+            gb_mem_write(gb, gb->SP+1, gb->PC >> 8);
             gb->PC = 0x0050;
 
             // Clear IME and corresponding bit of IF
@@ -966,8 +1005,8 @@ void gb_exec(GameBoy *gb, Inst inst)
         // Joypad Interrupt
         if (((IF & 0x1F) == 0x1F) && ((IE & 0x1F) == 0x1F)) {
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP+0, gb->PC & 0xff);
-            gb_write_memory(gb, gb->SP+1, gb->PC >> 8);
+            gb_mem_write(gb, gb->SP+0, gb->PC & 0xff);
+            gb_mem_write(gb, gb->SP+1, gb->PC >> 8);
             gb->PC = 0x0060;
 
             // Clear IME and corresponding bit of IF
@@ -984,8 +1023,8 @@ void gb_exec(GameBoy *gb, Inst inst)
         //    // Handle interrupt
         //    gb->SP -= 2;
         //    uint16_t ret_addr = gb->PC;
-        //    gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
-        //    gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+        //    gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
+        //    gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
         //    gb->PC = 0x0040; // VBlank
 
         //    gb->IME = 0;
@@ -1001,7 +1040,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0x10) {
             gb_log_inst("STOP");
-            gb_write_timer(gb, rDIV, 0);
+            gb_timer_write(gb, rDIV, 0);
             gb->PC += inst.size;
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 src = (b >> 4) & 0x3;
@@ -1115,7 +1154,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0x0A || b == 0x1A) {
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("LD A,(%s)", gb_reg16_to_str(reg));
-            uint8_t value = gb_read_memory(gb, gb_get_reg16(gb, reg));
+            uint8_t value = gb_mem_read(gb, gb_get_reg16(gb, reg));
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0x02 || b == 0x12) {
@@ -1123,12 +1162,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("LD (%s),A", gb_reg16_to_str(reg));
             uint16_t addr = gb_get_reg16(gb, reg);
             uint8_t value = gb_get_reg(gb, REG_A);
-            gb_write_memory(gb, addr, value);
+            gb_mem_write(gb, addr, value);
             gb->PC += inst.size;
         } else if (b == 0x22 || b == 0x32) {
             gb_log_inst("LD (HL%c),A", b == 0x22 ? '+' : '-');
             uint8_t a = gb_get_reg(gb, REG_A);
-            gb_write_memory(gb, gb->HL, a);
+            gb_mem_write(gb, gb->HL, a);
             if (b == 0x22) gb->HL += 1;
             else gb->HL -= 1;
             gb->PC += inst.size;
@@ -1136,12 +1175,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("LD A,(%s)", gb_reg16_to_str(reg));
             uint16_t addr = gb_get_reg16(gb, reg);
-            uint8_t value = gb_read_memory(gb, addr);
+            uint8_t value = gb_mem_read(gb, addr);
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0x2A || b == 0x3A) {
             gb_log_inst("LD A,(HL%c)", b == 0x2A ? '+' : '-');
-            uint8_t value = gb_read_memory(gb, gb->HL);
+            uint8_t value = gb_mem_read(gb, gb->HL);
             gb_set_reg(gb, REG_A, value);
             if (b == 0x2A) gb->HL += 1;
             else gb->HL -= 1;
@@ -1249,12 +1288,12 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("LD(0xFF00+%02X),%02X", gb_get_reg(gb, REG_C), gb_get_reg(gb, REG_A));
             uint8_t a = gb_get_reg(gb, REG_A);
             uint8_t c = gb_get_reg(gb, REG_C);
-            gb_write_memory(gb, 0xFF00 + c, a);
+            gb_mem_write(gb, 0xFF00 + c, a);
             gb->PC += inst.size;
         } else if (b == 0xF2) {
             gb_log_inst("LD A,(C)");
             uint8_t c = gb_get_reg(gb, REG_C);
-            uint8_t value = gb_read_memory(gb, 0xFF00 + c);
+            uint8_t value = gb_mem_read(gb, 0xFF00 + c);
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0xF3 || b == 0xFB) {
@@ -1265,8 +1304,8 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
             Flag f = (b >> 3) & 0x3;
-            uint8_t low = gb_read_memory(gb, gb->SP + 0);
-            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            uint8_t low = gb_mem_read(gb, gb->SP + 0);
+            uint8_t high = gb_mem_read(gb, gb->SP + 1);
             uint16_t addr = (high << 8) | low;
             gb_log_inst("RET %s", gb_flag_to_str(f));
             if (gb_get_flag(gb, f)) {
@@ -1280,15 +1319,15 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC9) {
-            uint8_t low = gb_read_memory(gb, gb->SP + 0);
-            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            uint8_t low = gb_mem_read(gb, gb->SP + 0);
+            uint8_t high = gb_mem_read(gb, gb->SP + 1);
             uint16_t addr = (high << 8) | low;
             gb_log_inst("RET");
             gb->SP += 2;
             gb->PC = addr;
         } else if (b == 0xD9) {
-            uint8_t low = gb_read_memory(gb, gb->SP + 0);
-            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            uint8_t low = gb_mem_read(gb, gb->SP + 0);
+            uint8_t high = gb_mem_read(gb, gb->SP + 1);
             uint16_t addr = (high << 8) | low;
             gb_log_inst("RETI");
             gb->SP += 2;
@@ -1297,15 +1336,15 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0xC1 || b == 0xD1 || b == 0xE1) {
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("POP %s", gb_reg16_to_str(reg));
-            uint8_t low = gb_read_memory(gb, gb->SP + 0);
-            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            uint8_t low = gb_mem_read(gb, gb->SP + 0);
+            uint8_t high = gb_mem_read(gb, gb->SP + 1);
             gb_set_reg16(gb, reg, (high << 8) | low);
             gb->SP += 2;
             gb->PC += inst.size;
         } else if (b == 0xF1) {
             gb_log_inst("POP AF");
-            uint8_t low = gb_read_memory(gb, gb->SP + 0) & 0xF0; // Clear the lower 4-bits
-            uint8_t high = gb_read_memory(gb, gb->SP + 1);
+            uint8_t low = gb_mem_read(gb, gb->SP + 0) & 0xF0; // Clear the lower 4-bits
+            uint8_t high = gb_mem_read(gb, gb->SP + 1);
             gb->AF = (high << 8) | low;
             gb->SP += 2;
             gb->PC += inst.size;
@@ -1314,15 +1353,15 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("PUSH %s", gb_reg16_to_str(reg));
             uint16_t value = gb_get_reg16(gb, reg);
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP + 0, value & 0xff);
-            gb_write_memory(gb, gb->SP + 1, value >> 8);
+            gb_mem_write(gb, gb->SP + 0, value & 0xff);
+            gb_mem_write(gb, gb->SP + 1, value >> 8);
             gb->PC += inst.size;
         } else if (b == 0xF5) {
             gb_log_inst("PUSH AF");
             uint16_t value = gb->AF;
             gb->SP -= 2;
-            gb_write_memory(gb, gb->SP + 0, value & 0xff);
-            gb_write_memory(gb, gb->SP + 1, value >> 8);
+            gb_mem_write(gb, gb->SP + 0, value & 0xff);
+            gb_mem_write(gb, gb->SP + 1, value >> 8);
             gb->PC += inst.size;
         } else if (
             b == 0xC7 || b == 0xD7 || b == 0xE7 || b == 0xF7 ||
@@ -1332,8 +1371,8 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("RST %02XH", n);
             gb->SP -= 2;
             uint16_t ret_addr = gb->PC + inst.size;
-            gb_write_memory(gb, gb->SP + 0, ret_addr & 0xff);
-            gb_write_memory(gb, gb->SP + 1, ret_addr >> 8);
+            gb_mem_write(gb, gb->SP + 0, ret_addr & 0xff);
+            gb_mem_write(gb, gb->SP + 1, ret_addr >> 8);
             gb->PC = n;
         } else if (b == 0xE9) {
             gb_log_inst("JP HL");
@@ -1401,7 +1440,7 @@ void gb_exec(GameBoy *gb, Inst inst)
         } else if (b == 0xE0) {
             gb_log_inst("LDH (FF00+%02X),A", inst.data[1]);
             uint8_t value = gb_get_reg(gb, REG_A);
-            gb_write_memory(gb, 0xFF00 + inst.data[1], value);
+            gb_mem_write(gb, 0xFF00 + inst.data[1], value);
             gb->PC += inst.size;
         } else if (b == 0xC6) {
             gb_log_inst("ADD A,0x%02X", inst.data[1]);
@@ -1458,7 +1497,7 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0xF0) {
             gb_log_inst("LDH A,(FF00+%02X)", inst.data[1]);
-            uint8_t value = gb_read_memory(gb, 0xFF00 + inst.data[1]);
+            uint8_t value = gb_mem_read(gb, 0xFF00 + inst.data[1]);
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else if (b == 0xF6) {
@@ -1611,8 +1650,8 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0x08) {
             gb_log_inst("LD (0x%04X),SP", n);
-            gb_write_memory(gb, n+0, gb->SP & 0xff);
-            gb_write_memory(gb, n+1, gb->SP >> 8);
+            gb_mem_write(gb, n+0, gb->SP & 0xff);
+            gb_mem_write(gb, n+1, gb->SP >> 8);
             gb->PC += inst.size;
         } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
             Flag f = (b >> 3) & 0x3;
@@ -1634,8 +1673,8 @@ void gb_exec(GameBoy *gb, Inst inst)
                     gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
                     gb->SP -= 2;
                     uint16_t ret_addr = gb->PC + inst.size;
-                    gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
-                    gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+                    gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
+                    gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
                     gb->PC = n;
                 }
             } else {
@@ -1646,17 +1685,17 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("CALL 0x%04X", n);
             gb->SP -= 2;
             uint16_t ret_addr = gb->PC + inst.size;
-            gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
-            gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
+            gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
+            gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
             gb->PC = n;
         } else if (b == 0xEA) {
             gb_log_inst("LD (0x%04X),A", n);
             uint8_t a = gb_get_reg(gb, REG_A);
-            gb_write_memory(gb, n, a);
+            gb_mem_write(gb, n, a);
             gb->PC += inst.size;
         } else if (b == 0xFA) {
             gb_log_inst("LD A,(0x%04X)", n);
-            uint8_t value = gb_read_memory(gb, n);
+            uint8_t value = gb_mem_read(gb, n);
             gb_set_reg(gb, REG_A, value);
             gb->PC += inst.size;
         } else {
@@ -1919,12 +1958,12 @@ void gb_load_boot_rom(GameBoy *gb)
 
 void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
 {
-    printf("  ROM Size: $%lx (%ld KiB, %ld bytes)\n", size, size / 1024, size);
-    printf("  ROM Banks: #%zu\n", size / 0x4000);
     assert(size > 0x14F);
     RomHeader *header = (RomHeader*)(raw + 0x100);
+    printf("  ROM Size:          $%lx (%ld KiB, %ld bytes)\n", size, size / 1024, size);
+    printf("  ROM Banks:         #%zu\n", size / 0x4000);
     if (strlen(header->title)) {
-        printf("  Title: %s\n", header->title);
+        printf("  Title:             %s\n", header->title);
     } else {
         printf("  Title:");
         for (int i = 0; i < 16; i++) printf(" %02X", header->title[i]);
@@ -1934,16 +1973,15 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         fprintf(stderr, "Nintendo Logo does NOT match\n");
         exit(1);
     }
-    printf("  CGB: %02X\n", (uint8_t)header->title[15]);
-    printf("  New licensee code: %02X %02X\n", header->new_licensee[0], header->new_licensee[1]);
-    printf("  SGB: %02X\n", header->sgb);
-    printf("  Cartridge Type: %02X\n", header->cart_type);
-    printf("  ROM size: $%02X %d KiB\n", header->rom_size, 32*(1 << header->rom_size));
-    printf("  RAM size: %02X\n", header->ram_size);
-    printf("  Destination code: %02X\n", header->dest_code);
-    printf("  Old licensee code: %02X\n", header->old_licensee);
-    printf("  Mask ROM version number: %02X\n", header->mask_version);
-    printf("  Header checksum: %02X\n", header->header_check);
+    printf("  CGB:               $%02X\n", (uint8_t)header->title[15]);
+    printf("  New licensee code: $%02X $%02X\n", header->new_licensee[0], header->new_licensee[1]);
+    printf("  SGB:               $%02X\n", header->sgb);
+    printf("  Cartridge Type:    $%02X\n", header->cart_type);
+    printf("  ROM size:          $%02X %d KiB\n", header->rom_size, 32*(1 << header->rom_size));
+    printf("  Destination code:  $%02X\n", header->dest_code);
+    printf("  Old licensee code: $%02X\n", header->old_licensee);
+    printf("  Mask ROM version number: $%02X\n", header->mask_version);
+    printf("  Header checksum:   $%02X\n", header->header_check);
     uint8_t checksum = 0;
     for (uint16_t addr = 0x0134; addr <= 0x014C; addr++) {
         checksum = checksum - raw[addr] - 1;
@@ -1953,7 +1991,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         exit(1);
     }
 
-    printf("  Global checksum: %02X %02X\n", header->global_check[0], header->global_check[1]);
+    printf("  Global checksum:   $%02X $%02X\n", header->global_check[0], header->global_check[1]);
     printf("\n");
     //assert(header->cart_type == 0);
 
@@ -2114,85 +2152,4 @@ void gb_tick(GameBoy *gb, double dt_ms)
             }
         }
     }
-}
-
-bool get_command(GameBoy *gb)
-{
-    for (size_t i = 0; i < bp_count; i++) {
-        if (bp[i] == gb->PC) {
-            gb->step_debug = true;
-            printf("Hit Breakpoint at: %04X\n", gb->PC);
-        }
-    }
-
-    if (!gb->step_debug) return true;
-
-    char buf[256];
-    char *cmd = buf;
-    fgets(cmd, sizeof(buf), stdin);
-
-    if (strncmp(cmd, "q", 1) == 0 || strncmp(cmd, "quit", 4) == 0) {
-        printf("Quitting...\n");
-        exit(0);
-    } else if (strncmp(cmd, "s", 1) == 0 || strncmp(cmd, "step", 4) == 0) {
-        return true;
-    } else if (strncmp(cmd, "n", 1) == 0 || strncmp(cmd, "next", 4) == 0) {
-        Inst inst = gb_fetch_inst(gb);
-        bp[bp_count++] = gb->PC + inst.size;
-        gb->step_debug = false;
-        gb->paused = false;
-        return true;
-    } else if (strncmp(cmd, "c", 1) == 0 || strncmp(cmd, "continue", 8) == 0) {
-        gb->step_debug = false;
-        gb->paused = false;
-        return true;
-    } else if (strncmp(cmd, "d", 1) == 0 || strncmp(cmd, "dump", 4) == 0) {
-        gb_dump(gb);
-    } else if (strncmp(cmd, "b", 1) == 0 || strncmp(cmd, "break", 5) == 0) {
-        while (*cmd != ' ') cmd += 1;
-        cmd += 1;
-
-        unsigned long addr;
-        if (cmd[0] == '0' && cmd[1] == 'x') {
-            // Parse hex
-            addr = strtoul(cmd + 2, NULL, 16);
-        } else if (cmd[0] >= '0' && cmd[0] <= '9') {
-            addr = strtoul(cmd, NULL, 10);
-        } else {
-            assert(0 && "TODO: Invalid break address");
-        }
-
-        printf("Setting breakpoint at 0x%04lX\n", addr);
-
-        bp[bp_count] = addr;
-        bp_count += 1;
-    } else if (strncmp(cmd, "x", 1) == 0) {
-        // x/nfu addr
-        // x/5 addr
-        // x/5i addr
-        assert(cmd[1] == '/');
-        char *end;
-        unsigned long n = strtoul(cmd + 2, &end, 10);
-        char f = *end;
-        while (!isdigit(*end)) {
-            end++;
-        }
-
-        unsigned long addr = strtoul(end, NULL, 16);
-        assert(n > 0);
-        assert(addr <= 0xFFFF);
-        if (f == 'i') {
-            printf("NOT IMPLEMENTED\n");
-            printf("%04lX: ", addr);
-            printf("\n");
-        } else {
-            printf("%04lX: ", addr);
-            for (size_t i = 0; i < n && addr + i <= 0xFFFF; i++) {
-                printf("%02X ", gb->memory[addr + i]);
-            }
-            printf("\n");
-        }
-    }
-
-    return false;
 }
