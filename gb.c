@@ -32,11 +32,6 @@ BACKLOG:
 const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
 //const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
 
-// Debug Status
-static size_t bp_count = 0;
-#define MAX_BREAKPOINTS 16
-static uint16_t bp[MAX_BREAKPOINTS];
-
 typedef struct RomHeader {
     uint8_t entry[4];       // 0100-0103 (4)
     uint8_t logo[48];       // 0104-0133 (48)
