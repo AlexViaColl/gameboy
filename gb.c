@@ -7,6 +7,8 @@
 
 #include "gb.h"
 
+#include "platform.c"
+
 /*
 BACKLOG:
 [x] - Fix palette in Dr. Mario
@@ -83,26 +85,8 @@ void gb_dump(const GameBoy *gb)
         gb->memory[gb->PC+2]);
 }
 
-void gb_trigger_interrupt(GameBoy *gb)
-{
-    gb->memory[rIF/*$FF0F*/] |= (1 << 2);
-    // TODO: This is probably not right
-    gb->SP -= 2;
-    uint16_t ret_addr = gb->PC;
-    gb_write_memory(gb, gb->SP+0, ret_addr & 0xff);
-    gb_write_memory(gb, gb->SP+1, ret_addr >> 8);
-    gb->PC = 0x0050;
-}
-
 uint8_t gb_read_memory(const GameBoy *gb, uint16_t addr)
 {
-#if 0
-    if (addr == 0xFF0F) {
-        fprintf(stderr, "Reading [IF/*$FF0F*/] = %02X\n", gb->memory[addr]);
-    } else if (addr == 0xFFFF) {
-        fprintf(stderr, "Reading [IE/*$FFFF*/] = %02X\n", gb->memory[addr]);
-    }
-#endif
     return gb->memory[addr];
 }
 
@@ -568,7 +552,6 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
     va_end(args);
 
     Inst inst = gb_fetch_inst(gb);
-#if 1
     gb->printf("%04X:  ", gb->PC);
     gb->printf(" %15s  | ", buf);
     for (size_t i = 0; i < 3; i++) {
@@ -580,20 +563,6 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
     }
     gb->printf("| ");
     gb_dump(gb);
-#else
-    printf("A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X",
-        gb_get_reg(gb, REG_A), gb->AF & 0xff,
-        gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C),
-        gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E),
-        gb_get_reg(gb, REG_H), gb_get_reg(gb, REG_L));
-
-    printf(" SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
-        gb->SP, gb->PC,
-        gb->memory[gb->PC+0],
-        gb->memory[gb->PC+1],
-        gb->memory[gb->PC+2],
-        gb->memory[gb->PC+3]);
-#endif
 }
 
 Inst gb_fetch_inst(const GameBoy *gb)
@@ -1802,6 +1771,8 @@ static void gb_render_row(GameBoy *gb, int px_row)
 
     uint16_t scx = gb->memory[rSCX];
     uint16_t scy = gb->memory[rSCY];
+    (void)scx;
+    (void)scy;
 
     uint16_t bg_win_td_off = (lcdc & LCDCF_BG8000) == LCDCF_BG8000 ?  _VRAM8000 : _VRAM9000;
     uint16_t bg_tm_off = (lcdc & LCDCF_BG9C00) == LCDCF_BG9C00 ? _SCRN1 : _SCRN0;
@@ -2133,49 +2104,16 @@ void gb_tick(GameBoy *gb, double dt_ms)
         int freq = gb_clock_freq(gb->memory[rTAC] & 3);
         if (gb->timer_tima <= 0) {
             gb->memory[rTIMA] += 1;
-            gb->timer_tima += 1000.0 / freq; 
+            gb->timer_tima += 1000.0 / freq;
             //fprintf(stderr, "Increasing TIMA %02X -> %02X\n", (uint8_t)(gb->memory[rTIMA] - 1), gb->memory[rTIMA]);
             if (gb->memory[rTIMA] == 0) {
                 //fprintf(stderr, "Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
                 gb->memory[rTIMA] = gb->memory[rTMA];
                 // Trigger interrupt
                 gb->memory[rIF] |= 0x04;
-                //gb_trigger_interrupt(gb);
             }
         }
     }
-}
-
-uint8_t *read_entire_file(const char *path, size_t *size)
-{
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        fprintf(stderr, "Failed to open %s\n", path);
-        exit(1);
-    }
-    if (fseek(f, 0, SEEK_END) < 0) {
-        fprintf(stderr, "Failed to read file %s\n", path);
-        exit(1);
-    }
-
-    long file_size = ftell(f);
-    assert(file_size > 0);
-
-    rewind(f);
-
-    uint8_t *file_data = malloc(file_size);
-    assert(file_data);
-
-    size_t bytes_read = fread(file_data, 1, file_size, f);
-    if (bytes_read != (size_t)file_size) {
-        fprintf(stderr, "Could not read entire file\n");
-        exit(1);
-    }
-
-    if (size != NULL) {
-        *size = bytes_read;
-    }
-    return file_data;
 }
 
 bool get_command(GameBoy *gb)
