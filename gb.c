@@ -621,7 +621,7 @@ Inst gb_fetch_inst(const GameBoy *gb)
     }
 
     // 1-byte instructions
-    if (b == 0x00 || b == 0x10 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, STOP, HALT, DI, EI
+    if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
         return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
         return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
@@ -666,7 +666,9 @@ Inst gb_fetch_inst(const GameBoy *gb)
     }
 
     // 2-byte instructions
-    else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
+    else if (b == 0x10) { // STOP
+        return (Inst){.data = data, .size = 2, .min_cycles = 4, .max_cycles = 4};
+    } else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         uint8_t cycles = b == 0x36 ? 12 : 8;
         return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b == 0x18) { // JR r8
@@ -717,8 +719,6 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     if (inst.size == 1) {
         if (b == 0x00) {
             snprintf(buf, size, "NOP");
-        } else if (b == 0x10) {
-            snprintf(buf, size, "STOP");
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 r16 = (b >> 4) & 0x3;
             snprintf(buf, size, "ADD HL,%s", gb_reg16_to_str(r16));
@@ -840,7 +840,9 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
         uint8_t b2 = inst.data[1];
-        if (b == 0x18) {
+        if (b == 0x10) {
+            snprintf(buf, size, "STOP");
+        } else if (b == 0x18) {
             int r8 = b2 >= 0x80 ? (int8_t)b2 : b2;
             snprintf(buf, size, "JR %d", r8);
         } else if ( // LD reg,d8
@@ -943,9 +945,24 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     return buf;
 }
 
+bool gb_button_down(GameBoy *gb)
+{
+    return gb->button_a || gb->button_b || gb->button_start || gb->button_select ||
+        gb->dpad_up || gb->dpad_down || gb->dpad_left || gb->dpad_right;
+}
+
 void gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
+
+    if (gb->stopped) {
+        if (gb_button_down(gb)) {
+            gb->stopped = false;
+            gb->PC += 2;
+            gb_timer_write(gb, rDIV, 0);
+            return;
+        }
+    }
 
     uint8_t IE = gb->memory[rIE];
     uint8_t IF = gb->memory[rIF];
@@ -1037,10 +1054,6 @@ void gb_exec(GameBoy *gb, Inst inst)
     if (inst.size == 1) {
         if (b == 0x00) {
             gb_log_inst("NOP");
-            gb->PC += inst.size;
-        } else if (b == 0x10) {
-            gb_log_inst("STOP");
-            gb_timer_write(gb, rDIV, 0);
             gb->PC += inst.size;
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
             Reg16 src = (b >> 4) & 0x3;
@@ -1389,7 +1402,10 @@ void gb_exec(GameBoy *gb, Inst inst)
     }
     // 2-byte instructions
     else if (inst.size == 2 && b != 0xCB) {
-        if (b == 0x18) {
+        if (b == 0x10) {
+            gb_log_inst("STOP");
+            gb->stopped = true;
+        } else if (b == 0x18) {
             static bool infinite_loop = false;
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
             if (!infinite_loop) {

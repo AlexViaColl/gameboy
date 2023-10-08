@@ -1847,9 +1847,9 @@ void test_divider_register(void)
     // Writing any value to DIV resets it to $00
     {
         GameBoy gb = {0};
-        gb.memory[rDIV/*FF04*/] = 0x69;
-        gb_mem_write(&gb, rDIV/*FF04*/, 1);
-        assert(gb.memory[rDIV/*FF04*/] == 0);
+        gb.memory[rDIV] = 0x69;
+        gb_mem_write(&gb, rDIV, 1);
+        assert(gb.memory[rDIV] == 0);
     }
 
     // DIV increments at a rate of 16384 Hz
@@ -1865,12 +1865,19 @@ void test_divider_register(void)
         assert(gb.memory[rDIV] == 11);
     }
 
-    // TODO: DIV is reset after a STOP instruction
+    // DIV is reset after a STOP instruction
     {
         GameBoy gb = {0};
         gb.memory[rDIV] = 0x69;
-        Inst inst = {.data = (uint8_t*)"\x10", .size = 1};
+        Inst inst = {.data = (uint8_t*)"\x10\x00", .size = 2};
         gb_exec(&gb, inst);
+        assert(gb.stopped == true);
+
+        gb.button_a = 1;
+        gb_exec(&gb, inst);
+        assert(gb.stopped == false);
+        assert(gb.PC == 2);
+        assert(gb.memory[rDIV] == 0);
     }
 
     test_end

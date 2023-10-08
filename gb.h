@@ -214,6 +214,7 @@ typedef struct GameBoy {
 
     uint64_t inst_executed;
     bool halted;
+    bool stopped;
     bool running;
     bool paused;
     bool step_debug;
