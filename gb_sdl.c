@@ -38,6 +38,8 @@ static SDL_Renderer *renderer;
 static SDL_AudioDeviceID device;
 static ViewerType viewer_type = VT_GAME;
 
+static double frame_ms;
+
 static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
 {
     // 8x8 pixels
@@ -122,7 +124,7 @@ static void render_debug_tiles(SDL_Renderer *renderer, int w, int h, uint8_t *ti
 
 static void render_debug_text(SDL_Renderer *renderer, const char *text, int row, int col)
 {
-    uint8_t tiles[] = {
+    static uint8_t tiles[] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00,
         0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -377,7 +379,7 @@ static void render_debug_viewport(SDL_Renderer *renderer, int pixel_dim, int x, 
     SDL_RenderFillRect(renderer, &r);
 }
 
-void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
+static void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
 {
     int min_dim = h < w ? h : w;
     int pixel_dim = min_dim / 256; // GameBoy pixel size
@@ -398,21 +400,26 @@ void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
     render_debug_tile_grid(renderer, pixel_dim, x, y);
 }
 
-void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
+static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
 {
+    if (frame_ms < 16.0) return;
+
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
 
-    SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-    SDL_RenderClear(renderer);
-
-    int min_dim = h < w ? h : w;
-    int pixel_dim = min_dim / 160; // GameBoy pixel size
-    int x = (w - (160*pixel_dim))/2;
-    int y = (h - (144*pixel_dim))/2;
     if (viewer_type == VT_GAME) {
+        if (gb->memory[rLY] != 144 && (gb->memory[rLCDC] & LCDCF_ON) != 0) return;
+
+        SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
+        SDL_RenderClear(renderer);
+
+        int min_dim = h < w ? h : w;
+        int pixel_dim = min_dim / 160; // GameBoy pixel size
+        int x = (w - (160*pixel_dim))/2;
+        int y = (h - (144*pixel_dim))/2;
         uint16_t scx = gb->memory[rSCX];
         uint16_t scy = gb->memory[rSCY];
+
         for (int row = 0; row < 144; row++) {
             uint16_t px_row = (row+scy) % 256;
             for (int col = 0; col < 160; col++) {
@@ -425,21 +432,28 @@ void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
                 SDL_RenderFillRect(renderer, &r);
             }
         }
-    }
 
-    // Debug rendering
-    if (viewer_type == VT_TILEMAP) {
-        render_debug_tilemap(gb, renderer, w, h);
-    } else if (viewer_type == VT_TILES) {
-        render_debug_tiles(renderer, w, h, gb->memory + 0x8000);
-    } else if (viewer_type == VT_REGS) {
-        render_debug_hw_regs(gb, renderer, w, h);
-    }
+        frame_ms -= 16.0;
+        SDL_RenderPresent(renderer);
+    } else {
+        // Debug rendering
+        SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
+        SDL_RenderClear(renderer);
 
-    SDL_RenderPresent(renderer);
+        if (viewer_type == VT_TILEMAP) {
+            render_debug_tilemap(gb, renderer, w, h);
+        } else if (viewer_type == VT_TILES) {
+            render_debug_tiles(renderer, w, h, gb->memory + 0x8000);
+        } else if (viewer_type == VT_REGS) {
+            render_debug_hw_regs(gb, renderer, w, h);
+        }
+
+        frame_ms -= 16.0;
+        SDL_RenderPresent(renderer);
+    }
 }
 
-bool cstr_ends_with(const char *src, const char *end) {
+static bool cstr_ends_with(const char *src, const char *end) {
     long src_len = strlen(src);
     long end_len = strlen(end);
     if (end_len > src_len) return false;
@@ -449,7 +463,7 @@ bool cstr_ends_with(const char *src, const char *end) {
     return true;
 }
 
-void sdl_init(void)
+static void sdl_init(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
@@ -488,7 +502,7 @@ void sdl_init(void)
         audio_spec.freq, audio_spec.format, audio_spec.channels, audio_spec.samples, audio_spec.size);
 }
 
-void play_square_wave(int freq, int ms, int duty_cycle)
+static void play_square_wave(int freq, int ms, int duty_cycle)
 {
     // 46.875 ms => How many samples ?
     int samples_per_sweep = 2250;
@@ -531,7 +545,7 @@ void play_square_wave(int freq, int ms, int duty_cycle)
     SDL_PauseAudioDevice(device, 0);
 }
 
-void tile_viewer(const char *file_path)
+static void tile_viewer(const char *file_path)
 {
     size_t size;
     uint8_t *tile_data = read_entire_file(file_path, &size);
@@ -560,6 +574,127 @@ void tile_viewer(const char *file_path)
     }
 }
 
+static void sdl_process_events(GameBoy *gb)
+{
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_QUIT) {
+            gb->running = false;
+        } else if (e.type == SDL_WINDOWEVENT) {
+            if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                if (e.window.data1 < 256 || e.window.data2 < 256) {
+                    //SDL_SetWindowSize(window, 256, 256);
+                }
+            }
+        } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+            switch (e.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                gb->running = false;
+                break;
+            case SDLK_g:
+                viewer_type = VT_GAME;
+                break;
+            case SDLK_m:
+                viewer_type = VT_TILEMAP;
+                break;
+            case SDLK_t:
+                viewer_type = VT_TILES;
+                break;
+            case SDLK_r:
+                viewer_type = VT_REGS;
+                break;
+            case SDLK_p:
+                if (e.key.type == SDL_KEYDOWN) {
+                    gb->paused = !gb->paused;
+                    //if (gb->paused) gb->step_debug = true;
+                }
+                break;
+            case SDLK_1:
+                if (e.key.type == SDL_KEYDOWN) play_square_wave(1048, 100, 2);
+                break;
+            case SDLK_2:
+                if (e.key.type == SDL_KEYDOWN) play_square_wave(2080, 900, 2);
+                break;
+            case SDLK_3:
+                if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 2);
+                break;
+            case SDLK_4:
+                if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 3);
+                break;
+            case SDLK_SPACE:
+                if (e.key.type == SDL_KEYDOWN) {
+                    gb_dump(gb);
+                    printf("BG tilemap $9800-$9BFF:\n");
+                    for (int row = 0; row < 32; row++) {
+                        for (int col = 0; col < 32; col++) {
+                            printf("%02X ", gb->memory[0x9800 + row*32 + col]);
+                        }
+                        printf("\n");
+                    }
+                    printf("\n");
+
+                    printf("BG tilemap $9C00-$9FFF:\n");
+                    for (int row = 0; row < 32; row++) {
+                        for (int col = 0; col < 32; col++) {
+                            printf("%02X ", gb->memory[0x9C00 + row*32 + col]);
+                        }
+                        printf("\n");
+                    }
+                    printf("\n");
+
+                    printf("OAM $FE00-$FE9F:\n");
+                    for (int i = 0; i < 40; i++) {
+                        uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
+                        uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
+                        uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
+                        uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
+                        printf("X: %3d, Y: %3d, Tile: %3d (%02X), Attrib: %02X\n",
+                            x, y, tile_idx, tile_idx, attribs);
+                    }
+
+                    printf("$FFA4: %02X\n", gb->memory[0xFFA4]);
+                    printf("SCX: %02X\n", gb->memory[rSCX]);
+                }
+                break;
+            case SDLK_s:
+                gb->button_a = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_a:
+                gb->button_b = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_RETURN:
+                gb->button_start = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_LSHIFT:
+                gb->button_select = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_UP:
+                gb->dpad_up = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_DOWN:
+                gb->dpad_down = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_RIGHT:
+                gb->dpad_right = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+            case SDLK_LEFT:
+                gb->dpad_left = e.key.type == SDL_KEYDOWN ? 1 : 0;
+                break;
+
+            // Debug hotkeys
+            case SDLK_d:
+                if (e.key.type == SDL_KEYDOWN) gb->step_debug = !gb->step_debug;
+                break;
+            case SDLK_n:
+                if (e.key.type == SDL_KEYDOWN) gb->next_inst = true;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+}
+
 void emulator(const char *file_path)
 {
     GameBoy gb = {0};
@@ -567,11 +702,9 @@ void emulator(const char *file_path)
     gb.printf = printf;
     gb_load_rom_file(&gb, file_path);
 
-    SDL_Event e;
     Uint64 counter_freq = SDL_GetPerformanceFrequency();
     Uint64 start_counter = SDL_GetPerformanceCounter();
     Uint64 prev_counter = start_counter;
-    double frame_ms = 0;
     while (gb.running) {
         Uint64 curr_counter = SDL_GetPerformanceCounter();
         Uint64 delta_counter = curr_counter - prev_counter;
@@ -579,132 +712,11 @@ void emulator(const char *file_path)
         double dt_ms = (double)(1000.0 * delta_counter) / counter_freq;
         frame_ms += dt_ms;
 
-        // Input
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
-                gb.running = false;
-            } else if (e.type == SDL_WINDOWEVENT) {
-                if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                    if (e.window.data1 < 256 || e.window.data2 < 256) {
-                        //SDL_SetWindowSize(window, 256, 256);
-                    }
-                }
-            } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
-                switch (e.key.keysym.sym) {
-                case SDLK_ESCAPE:
-                    gb.running = false;
-                    break;
-                case SDLK_g:
-                    viewer_type = VT_GAME;
-                    break;
-                case SDLK_m:
-                    viewer_type = VT_TILEMAP;
-                    break;
-                case SDLK_t:
-                    viewer_type = VT_TILES;
-                    break;
-                case SDLK_r:
-                    viewer_type = VT_REGS;
-                    break;
-                case SDLK_p:
-                    if (e.key.type == SDL_KEYDOWN) {
-                        gb.paused = !gb.paused;
-                        //if (gb.paused) gb.step_debug = true;
-                    }
-                    break;
-                case SDLK_1:
-                    if (e.key.type == SDL_KEYDOWN) play_square_wave(1048, 100, 2);
-                    break;
-                case SDLK_2:
-                    if (e.key.type == SDL_KEYDOWN) play_square_wave(2080, 900, 2);
-                    break;
-                case SDLK_3:
-                    if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 2);
-                    break;
-                case SDLK_4:
-                    if (e.key.type == SDL_KEYDOWN) play_square_wave(440, 100, 3);
-                    break;
-                case SDLK_SPACE:
-                    if (e.key.type == SDL_KEYDOWN) {
-                        gb_dump(&gb);
-                        printf("BG tilemap $9800-$9BFF:\n");
-                        for (int row = 0; row < 32; row++) {
-                            for (int col = 0; col < 32; col++) {
-                                printf("%02X ", gb.memory[0x9800 + row*32 + col]);
-                            }
-                            printf("\n");
-                        }
-                        printf("\n");
+        sdl_process_events(&gb);
 
-                        printf("BG tilemap $9C00-$9FFF:\n");
-                        for (int row = 0; row < 32; row++) {
-                            for (int col = 0; col < 32; col++) {
-                                printf("%02X ", gb.memory[0x9C00 + row*32 + col]);
-                            }
-                            printf("\n");
-                        }
-                        printf("\n");
-
-                        printf("OAM $FE00-$FE9F:\n");
-                        for (int i = 0; i < 40; i++) {
-                            uint8_t y = gb.memory[_OAMRAM + i*4 + 0] - 16;
-                            uint8_t x = gb.memory[_OAMRAM + i*4 + 1] - 8;
-                            uint8_t tile_idx = gb.memory[_OAMRAM + i*4 + 2];
-                            uint8_t attribs = gb.memory[_OAMRAM + i*4 + 3];
-                            printf("X: %3d, Y: %3d, Tile: %3d (%02X), Attrib: %02X\n",
-                                x, y, tile_idx, tile_idx, attribs);
-                        }
-
-                        printf("$FFA4: %02X\n", gb.memory[0xFFA4]);
-                        printf("SCX: %02X\n", gb.memory[rSCX]);
-                    }
-                    break;
-                case SDLK_s:
-                    gb.button_a = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_a:
-                    gb.button_b = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_RETURN:
-                    gb.button_start = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_LSHIFT:
-                    gb.button_select = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_UP:
-                    gb.dpad_up = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_DOWN:
-                    gb.dpad_down = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_RIGHT:
-                    gb.dpad_right = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-                case SDLK_LEFT:
-                    gb.dpad_left = e.key.type == SDL_KEYDOWN ? 1 : 0;
-                    break;
-
-                // Debug hotkeys
-                case SDLK_d:
-                    if (e.key.type == SDL_KEYDOWN) gb.step_debug = !gb.step_debug;
-                    break;
-                case SDLK_n:
-                    if (e.key.type == SDL_KEYDOWN) gb.next_inst = true;
-                    break;
-                default:
-                    break;
-                }
-            }
-        }
-
-        // Update
         gb_tick(&gb, dt_ms);
 
-        // Render
-        if (frame_ms > 16.0 && (gb.memory[rLY] == 144 || (gb.memory[rLCDC] & LCDCF_ON) == 0)) {
-            sdl_render(&gb, renderer);
-            frame_ms -= 16.0;
-        }
+        sdl_render(&gb, renderer);
     }
 }
 
