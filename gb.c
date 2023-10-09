@@ -2050,7 +2050,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         assert(0 && "MBC not implemented yet!");
     }
 
-#if 1
+#if 0
     gb_load_boot_rom(gb);
 #else
     gb->AF = 0x01B0;

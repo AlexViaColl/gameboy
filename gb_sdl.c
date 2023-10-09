@@ -24,7 +24,8 @@
 
 #define BG          0x131313FF
 #define DBG_GRID    0x222222FF
-#define DBG_VIEW    0xFFFF14FF
+//#define DBG_VIEW    0xFFFF14FF
+#define DBG_VIEW    0xFF0014FF
 
 typedef enum ViewerType {
     VT_GAME,
@@ -124,7 +125,7 @@ static void render_debug_tiles(SDL_Renderer *renderer, int w, int h, uint8_t *ti
 
 static void render_debug_text(SDL_Renderer *renderer, const char *text, int row, int col)
 {
-    static uint8_t tiles[] = {
+    uint8_t tiles[] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00,
         0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -357,26 +358,69 @@ static void render_debug_tile_grid(SDL_Renderer *renderer, int pixel_dim, int x,
     }
 }
 
-static void render_debug_viewport(SDL_Renderer *renderer, int pixel_dim, int x, int y)
+static void render_debug_viewport(GameBoy *gb, SDL_Renderer *renderer,
+    int pixel_dim, int x, int y, int w, int h)
 {
-    SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(DBG_VIEW));
     int thick = 5;
 
-    // bottom line
-    SDL_Rect r = {x, y+HEIGHT*pixel_dim, WIDTH*pixel_dim+thick, thick};
+    int wview = WIDTH*pixel_dim;
+    int hview = HEIGHT*pixel_dim;
+
+    int xleft   = x + gb->memory[rSCX]*pixel_dim;
+    int xright  = xleft + wview;
+    int ytop    = y + gb->memory[rSCY]*pixel_dim;
+    int ybottom = ytop  + hview;
+
+    SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(DBG_VIEW));
+
+    // left
+    SDL_Rect r = {xleft, ytop, thick, hview};
     SDL_RenderFillRect(renderer, &r);
 
-    // right line
-    r = (SDL_Rect){x+WIDTH*pixel_dim, y, thick, HEIGHT*pixel_dim};
-    SDL_RenderFillRect(renderer, &r);
+    // right
+    if (xright < w) {
+        SDL_Rect r = {xright % w, ytop, thick, hview};
+        SDL_RenderFillRect(renderer, &r);
+    } else {
+        SDL_Rect r = {x + (xright % w), ytop, thick, hview};
+        SDL_RenderFillRect(renderer, &r);
+    }
 
-    // top line
-    r = (SDL_Rect){x, y, WIDTH*pixel_dim+thick, thick};
-    SDL_RenderFillRect(renderer, &r);
+    int xextra = (xright < w)  ? 0 : (xright  % w);
+    int yextra = (ybottom < h) ? 0 : (ybottom % h);
+    if (ybottom < h) {
+        // top
+        SDL_Rect r = {xleft, ytop, wview + thick - xextra, thick};
+        SDL_RenderFillRect(renderer, &r);
 
-    // left line
-    r = (SDL_Rect){x, y, thick, HEIGHT*pixel_dim};
-    SDL_RenderFillRect(renderer, &r);
+        // bottom
+        r = (SDL_Rect){xleft, ybottom % h, wview + thick - xextra, thick};
+        SDL_RenderFillRect(renderer, &r);
+
+        if (xextra > 0) {
+            SDL_Rect r = {x, ytop, xextra + thick, thick};
+            SDL_RenderFillRect(renderer, &r);
+
+            r = (SDL_Rect){x, ybottom, xextra + thick, thick};
+            SDL_RenderFillRect(renderer, &r);
+        }
+    } else {
+        // top
+        SDL_Rect r = {xleft, y + (ytop % h), wview + thick, thick};
+        SDL_RenderFillRect(renderer, &r);
+
+        // bottom
+        r = (SDL_Rect){xleft, ybottom % h, wview + thick, thick};
+        SDL_RenderFillRect(renderer, &r);
+
+        if (xextra > 0) {
+            SDL_Rect r = {x, y + (ytop % h), xextra + thick, thick};
+            SDL_RenderFillRect(renderer, &r);
+
+            r = (SDL_Rect){x, ybottom % h, xextra + thick, thick};
+            SDL_RenderFillRect(renderer, &r);
+        }
+    }
 }
 
 static void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int h)
@@ -389,14 +433,13 @@ static void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int
         for (int col = 0; col < 256; col++) {
             Color color = gb->display[row*256 + col];
             SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
-            SDL_Rect r = {
-                x+col*pixel_dim, y+row*pixel_dim,
-                pixel_dim, pixel_dim};
+            SDL_Rect r = {x+col*pixel_dim, y+row*pixel_dim, pixel_dim, pixel_dim};
             SDL_RenderFillRect(renderer, &r);
         }
     }
 
-    render_debug_viewport(renderer, pixel_dim, x + gb->memory[rSCX]*pixel_dim, y);
+    render_debug_viewport(gb, renderer, pixel_dim,
+        x, y, x+255*pixel_dim, y+255*pixel_dim);
     render_debug_tile_grid(renderer, pixel_dim, x, y);
 }
 
@@ -437,6 +480,9 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
         SDL_RenderPresent(renderer);
     } else {
         // Debug rendering
+        if (viewer_type != VT_REGS &&
+            gb->memory[rLY] != 144 && (gb->memory[rLCDC] & LCDCF_ON) != 0) return;
+
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
         SDL_RenderClear(renderer);
 
