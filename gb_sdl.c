@@ -259,9 +259,21 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     render_debug_text(renderer, "Int.", row++, col);
     sprintf(text, "IME =%02X", gb->IME);
     render_debug_text(renderer, text, row++, col);
-    sprintf(text, "IF  =%02X", gb->memory[rIF]);
+    uint8_t intf = gb->memory[rIF];
+    sprintf(text, "IF  =%02X %s%s%s%s%s", intf,
+        intf & IEF_VBLANK ? "VBLANK " : "",
+        intf & IEF_STAT   ? "STAT "   : "",
+        intf & IEF_TIMER  ? "TIMER "  : "",
+        intf & IEF_SERIAL ? "SERIAL " : "",
+        intf & IEF_HILO   ? "JOYPAD " : "");
     render_debug_text(renderer, text, row++, col);
-    sprintf(text, "IE  =%02X", gb->memory[rIE]);
+    uint8_t ie = gb->memory[rIE];
+    sprintf(text, "IE  =%02X %s%s%s%s%s", ie,
+        ie & IEF_VBLANK ? "VBLANK " : "",
+        ie & IEF_STAT   ? "STAT "   : "",
+        ie & IEF_TIMER  ? "TIMER "  : "",
+        ie & IEF_SERIAL ? "SERIAL " : "",
+        ie & IEF_HILO   ? "JOYPAD " : "");
     render_debug_text(renderer, text, row++, col);
 
     row++;
@@ -272,14 +284,27 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     render_debug_text(renderer, text, row++, col);
     sprintf(text, "TMA =%02X", gb->memory[rTMA]);
     render_debug_text(renderer, text, row++, col);
-    sprintf(text, "TAC =%02X", gb->memory[rTAC]);
+    uint8_t tac = gb->memory[rTAC];
+    if (tac & 4) {
+        int freq[] = {4096, 262144, 65536, 16384};
+        sprintf(text, "TAC =%02X %d Hz", tac, freq[tac & 3]);
+    } else {
+        sprintf(text, "TAC =%02X", tac);
+    }
     render_debug_text(renderer, text, row++, col);
 
     row++;
     render_debug_text(renderer, "Display", row++, col);
-    sprintf(text, "LCDC=%02X", gb->memory[rLCDC]);
+    uint8_t lcdc = gb->memory[rLCDC];
+    sprintf(text, "LCDC=%02X %s%s%s%s", lcdc,
+        lcdc & LCDCF_ON    ? "LCD " : "",
+        lcdc & LCDCF_WINON ? "WIN " : "",
+        lcdc & LCDCF_OBJON ? "OBJ " : "",
+        lcdc & LCDCF_BGON  ? "BG "  : ""
+    );
     render_debug_text(renderer, text, row++, col);
-    sprintf(text, "STAT=%02X", gb->memory[rSTAT]);
+    uint8_t stat = gb->memory[rSTAT];
+    sprintf(text, "STAT=%02X %s", stat, stat & STATF_LYC ? "LYC" : "");
     render_debug_text(renderer, text, row++, col);
     sprintf(text, "SCX =%02X", gb->memory[rSCX]);
     render_debug_text(renderer, text, row++, col);
@@ -301,7 +326,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     render_debug_text(renderer, text, row++, col);
 
     row = 2;
-    col = 12;
+    col = 28;
     render_debug_text(renderer, "CPU Regs", row++, col);
     sprintf(text, "AF = %02X %02X", gb->AF >> 8, gb->AF & 0xFF);
     render_debug_text(renderer, text, row, col);
@@ -387,7 +412,6 @@ static void render_debug_viewport(GameBoy *gb, SDL_Renderer *renderer,
     }
 
     int xextra = (xright < w)  ? 0 : (xright  % w);
-    int yextra = (ybottom < h) ? 0 : (ybottom % h);
     if (ybottom < h) {
         // top
         SDL_Rect r = {xleft, ytop, wview + thick - xextra, thick};
