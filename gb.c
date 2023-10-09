@@ -955,6 +955,11 @@ bool gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
 
+    if (gb->boot_mode && gb->PC == 0x100) {
+        memcpy(gb->memory, gb->rom, 0x100);
+        gb->boot_mode = false;
+    }
+
     if (gb->stopped) {
         if (gb_button_down(gb)) {
             gb->stopped = false;
@@ -1975,6 +1980,8 @@ void gb_render(GameBoy *gb)
 
 void gb_load_boot_rom(GameBoy *gb)
 {
+    gb->boot_mode = true;
+    memcpy(gb->boot_rom, BOOT_ROM, sizeof(BOOT_ROM));
     memcpy(gb->memory, BOOT_ROM, sizeof(BOOT_ROM));
     memcpy(gb->memory+0x104, NINTENDO_LOGO, sizeof(NINTENDO_LOGO));
     //gb->memory[0x134] = 0xe7; // $19 + $e7 = $00 => Don't lock up
@@ -2043,7 +2050,7 @@ void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size)
         assert(0 && "MBC not implemented yet!");
     }
 
-#if 0
+#if 1
     gb_load_boot_rom(gb);
 #else
     gb->AF = 0x01B0;

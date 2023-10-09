@@ -183,6 +183,8 @@ typedef struct GameBoy {
     uint8_t memory[0x10000];
 
     uint8_t cart_type;
+    bool boot_mode;
+    uint8_t boot_rom[256];
     uint8_t *rom; // from 32 KiB (2 banks) to 8 MiB (512 banks)
     uint32_t rom_bank_count;
 
