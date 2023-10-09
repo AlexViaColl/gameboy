@@ -1933,6 +1933,8 @@ void test_lcd_control_register(void)
     // LCD/PPU Off
     {
         GameBoy gb = {0};
+        gb.memory[0] = 0x18; // JR -2
+        gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_OFF); // $00
         double dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
@@ -1950,6 +1952,8 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Off
     {
         GameBoy gb = {0};
+        gb.memory[0] = 0x18; // JR -2
+        gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BGOFF); // $80
         bool stat_00 = false;
         bool stat_01 = false;
@@ -1982,6 +1986,8 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9800 + Tile data "$8800" addressing ($9000 base + signed addressing)
     {
         GameBoy gb = {0};
+        gb.memory[0] = 0x18; // JR -2
+        gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8800|LCDCF_BGON); // $81
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00
@@ -2009,6 +2015,8 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9800 + Tile data "$8000" addressing
     {
         GameBoy gb = {0};
+        gb.memory[0] = 0x18; // JR -2
+        gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9800|LCDCF_BG8000|LCDCF_BGON); // $91
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00
@@ -2036,6 +2044,8 @@ void test_lcd_control_register(void)
     // LCD/PPU On + BG Tilemap $9C00 + Tile data "$8000" addressing
     {
         GameBoy gb = {0};
+        gb.memory[0] = 0x18; // JR -2
+        gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_ON|LCDCF_BG9C00|LCDCF_BG8000|LCDCF_BGON); // $99
 
         gb.memory[rBGP] = 0xE4; // 11|10|01|00

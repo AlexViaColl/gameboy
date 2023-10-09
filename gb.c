@@ -951,7 +951,7 @@ bool gb_button_down(GameBoy *gb)
         gb->dpad_up || gb->dpad_down || gb->dpad_left || gb->dpad_right;
 }
 
-void gb_exec(GameBoy *gb, Inst inst)
+bool gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
 
@@ -960,14 +960,14 @@ void gb_exec(GameBoy *gb, Inst inst)
             gb->stopped = false;
             gb->PC += 2;
             gb_timer_write(gb, rDIV, 0);
-            return;
+            return true;
         }
     }
 
     uint8_t IE = gb->memory[rIE];
     uint8_t IF = gb->memory[rIF];
     if (gb->halted) {
-        if ((IF & IE) == 0) return;
+        if ((IF & IE) == 0) return false;
         gb->halted = false;
     }
 
@@ -984,7 +984,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x01;
             }
-            return;
+            return true;
         }
 
         // STAT Interrupt
@@ -999,7 +999,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x02;
             }
-            return;
+            return true;
         }
 
         // Timer Interrupt
@@ -1016,7 +1016,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x04;
             }
-            return;
+            return true;
         }
 
         // Joypad Interrupt
@@ -1031,7 +1031,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x1F;
             }
-            return;
+            return true;
         }
 
         //if (gb->ime_cycles == 1) {
@@ -1047,6 +1047,14 @@ void gb_exec(GameBoy *gb, Inst inst)
         //    gb->IME = 0;
         //    return;
         //}
+    }
+
+    if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
+        return false;
+    }
+
+    if (inst.min_cycles == inst.max_cycles) {
+        gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
     }
 
     uint8_t b = inst.data[0];
@@ -1213,7 +1221,7 @@ void gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("HALT");
                 gb->halted = true;
                 gb->PC += inst.size;
-                return;
+                return true;
             }
             Reg8 src = b & 0x7;
             Reg8 dst = (b >> 3) & 0x7;
@@ -1721,6 +1729,8 @@ void gb_exec(GameBoy *gb, Inst inst)
 
     assert(gb->PC <= 0xFFFF);
     gb->inst_executed += 1;
+
+    return true;
 }
 
 static size_t gb_tile_coord_to_pixel(int row, int col)
@@ -2060,7 +2070,6 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     size_t size;
     uint8_t *raw = read_entire_file(path, &size);
     gb_load_rom(gb, raw, size);
-    //gb->step_debug = true;
     free(raw);
 }
 
@@ -2068,9 +2077,9 @@ void gb_tick(GameBoy *gb, double dt_ms)
 {
     if (gb->paused) return;
     gb->elapsed_ms += dt_ms;
-    gb->timer_div -= dt_ms;
+    gb->timer_div  -= dt_ms;
     gb->timer_tima -= dt_ms;
-    gb->timer_ly += dt_ms;
+    gb->timer_ly   += dt_ms;
 
     gb->timer_mcycle += dt_ms;
 
@@ -2082,50 +2091,41 @@ void gb_tick(GameBoy *gb, double dt_ms)
         gb->memory[rSTAT] |= 0x1;   // Mode 1 (VBlank)
     } else if (scanline_dots < 80) {
         gb->memory[rSTAT] |= 0x2;   // Mode 2 (OAM scan)
-    } else if (scanline_dots < 80+172) {
+    } else if (scanline_dots < (80+172)) {
         gb->memory[rSTAT] |= 0x3;   // Mode 3 (LCD transfer)
     } else {
         gb->memory[rSTAT] &= ~0x3;  // Mode 0 (HBlank)
     }
 
-    Inst inst = gb_fetch_inst(gb);
-
-    if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
-        return;
+    for (int i = 0; i < 50; i++) {
+        Inst inst = gb_fetch_inst(gb);
+        if (!gb_exec(gb, inst)) break;
     }
 
-    if (inst.min_cycles == inst.max_cycles) {
-        gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
-    }
-
-    if (!gb->step_debug || gb->next_inst) {
-        if (gb->next_inst) gb->next_inst = false;
-
-        gb_exec(gb, inst);
-
-        if (gb->timer_ly > 0.1089) {
-            gb->timer_ly -= 0.1089;
-            // VSync ~60Hz
-            // 60*153 ~9180 times/s (run every 0.1089 ms)
-            if (gb->memory[rLY] == gb->memory[rLYC]) {
-                gb->memory[rSTAT] |= 0x04; 
-                if (gb->memory[rIE] & 0x02) {
-                    gb->memory[rIF] |= 0x02;
-                }
-            } else {
-                gb->memory[rSTAT] &= ~0x04;
+    if (gb->timer_ly > 0.1089) {
+        gb->timer_ly -= 0.1089;
+        // VSync ~60Hz
+        // 60*153 ~9180 times/s (run every 0.1089 ms)
+        if (gb->memory[rLY] == gb->memory[rLYC]) {
+            gb->memory[rSTAT] |= 0x04;
+            if (gb->memory[rIE] & 0x02) {
+                gb->memory[rIF] |= 0x02;
             }
-            if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
-                gb->memory[rLY] = 0;
-                gb->memory[rSTAT] &= 0xF8; // Clear low 3-bits
-            } else {
-                gb->memory[rLY] += 1;
-            }
-            if (gb->memory[rLY] > 153) {
-                gb->memory[rIF] |= 0x01;
-                // Run this line 60 times/s (60Hz)
-                gb->memory[rLY] = 0;
-            }
+        } else {
+            gb->memory[rSTAT] &= ~0x04;
+        }
+        if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
+            gb->memory[rLY] = 0;
+            gb->memory[rSTAT] &= 0xF8; // Clear low 3-bits
+        } else {
+            gb->memory[rLY] += 1;
+        }
+        if (gb->memory[rLY] > 153) {
+            gb->memory[rIF] |= 0x01;
+            // Run this line 60 times/s (60Hz)
+            gb->memory[rLY] = 0;
+        } else if (gb->memory[rLY] == 144) {
+            // VBlank start
         }
     }
 

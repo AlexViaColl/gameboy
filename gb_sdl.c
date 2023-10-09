@@ -606,7 +606,6 @@ static void sdl_process_events(GameBoy *gb)
             case SDLK_p:
                 if (e.key.type == SDL_KEYDOWN) {
                     gb->paused = !gb->paused;
-                    //if (gb->paused) gb->step_debug = true;
                 }
                 break;
             case SDLK_1:
@@ -683,10 +682,8 @@ static void sdl_process_events(GameBoy *gb)
 
             // Debug hotkeys
             case SDLK_d:
-                if (e.key.type == SDL_KEYDOWN) gb->step_debug = !gb->step_debug;
                 break;
             case SDLK_n:
-                if (e.key.type == SDL_KEYDOWN) gb->next_inst = true;
                 break;
             default:
                 break;

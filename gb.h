@@ -217,8 +217,6 @@ typedef struct GameBoy {
     bool stopped;
     bool running;
     bool paused;
-    bool step_debug;
-    bool next_inst;
 } GameBoy;
 
 typedef struct Inst {
@@ -263,7 +261,7 @@ void gb_tick(GameBoy *gb, double dt_ms);
 
 Inst gb_fetch_inst(const GameBoy *gb);
 const char *gb_decode(Inst inst, char *buf, size_t size);
-void gb_exec(GameBoy *gb, Inst inst);
+bool gb_exec(GameBoy *gb, Inst inst);
 void gb_render(GameBoy *gb);
 
 void gb_dump(const GameBoy *gb);
