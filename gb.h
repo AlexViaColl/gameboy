@@ -6,7 +6,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef uint32_t Color;
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef float  f32;
+typedef double f64;
+
+typedef u32 Color;
 extern const Color PALETTE[4];
 
 #define WIDTH  160 // 20 tiles
@@ -19,8 +27,8 @@ extern const Color PALETTE[4];
 
 #define DOTS_PER_FRAME      70224
 #define DOTS_PER_SCANLINE   456     // 144 frame scanlines + 10 vblank scanlines = 153
-#define DOTS_TO_MS(dots) (double)((1000.0 / (VSYNC*DOTS_PER_FRAME))*(dots))
-#define MS_TO_DOTS(ms)   (uint64_t)(((VSYNC*DOTS_PER_FRAME) / 1000.0)*(ms))
+#define DOTS_TO_MS(dots) (f64)((1000.0 / (VSYNC*DOTS_PER_FRAME))*(dots))
+#define MS_TO_DOTS(ms)   (u64)(((VSYNC*DOTS_PER_FRAME) / 1000.0)*(ms))
 
 // 154 scanlines (144 lines displayed and 10 lines of VBlank)
 // 4 dots per cycle (~4.194 MHz, 1 frame takes 70224 dots)
@@ -152,15 +160,15 @@ typedef struct GameBoy {
     // CPU freq:        4.194304 MHz    (~4194304 cycles/s)
     // Horizontal sync: 9.198 KHz       ( 0.10871929 ms/line)
     // Vertical sync:   59.73 Hz        (16.74200569 ms/frame)
-    uint16_t AF; // Accumulator & Flags
-    uint16_t BC;
-    uint16_t DE;
-    uint16_t HL;
-    uint16_t SP; // Stack Pointer
-    uint16_t PC; // Program Counter
+    u16 AF; // Accumulator & Flags
+    u16 BC;
+    u16 DE;
+    u16 HL;
+    u16 SP; // Stack Pointer
+    u16 PC; // Program Counter
 
-    uint8_t IME; // Interrupt master enable flag (Instructions EI, DI, RETI, ISR)
-    uint8_t ime_cycles;
+    u8 IME; // Interrupt master enable flag (Instructions EI, DI, RETI, ISR)
+    u8 ime_cycles;
 
     // Tiles, Palettes and Layers
     // Tiles are 8x8 pixels (also called patterns or characters)
@@ -180,41 +188,42 @@ typedef struct GameBoy {
     // FF00-FF7F     I/O Registers
     // FF80-FFFE     High RAM (HRAM)
     // FFFF-FFFF     Interrup Enable Register (IE)
-    uint8_t memory[0x10000];
+    u8 memory[0x10000];
 
-    uint8_t cart_type;
+    u8 cart_type;
     bool boot_mode;
-    uint8_t boot_rom[256];
-    uint8_t *rom; // from 32 KiB (2 banks) to 8 MiB (512 banks)
-    uint32_t rom_bank_count;
+    u8 boot_rom[256];
+    u8 *rom; // from 32 KiB (2 banks) to 8 MiB (512 banks)
+    u32 rom_bank_count;
 
     // MBC1-specific
     bool ram_enabled;
-    uint8_t rom_bank_num;
+    u8 rom_bank_num;
 
     // Input
-    uint8_t button_a;
-    uint8_t button_b;
-    uint8_t button_start;
-    uint8_t button_select;
-    uint8_t dpad_up;
-    uint8_t dpad_down;
-    uint8_t dpad_left;
-    uint8_t dpad_right;
+    u8 button_a;
+    u8 button_b;
+    u8 button_start;
+    u8 button_select;
+    u8 dpad_up;
+    u8 dpad_down;
+    u8 dpad_left;
+    u8 dpad_right;
 
     // Timers
-    double elapsed_ms;  // Milliseconds elapsed since the start
-    double timer_mcycle;// Timer for counting Mcycles (~1 MHz => 1048576 Hz)
-    double timer_clock;
-    double timer_div;   // Ticks at 16384Hz (in ms)
-    double timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
-    double timer_ly;    // Ticks at ~9180 Hz (every 0.1089 ms)
+    u64 elapsed_us;// Microseconds elapsed since the start
+    f64 elapsed_ms;  // Milliseconds elapsed since the start
+    f64 timer_mcycle;// Timer for counting Mcycles (~1 MHz => 1048576 Hz)
+    f64 timer_clock;
+    f64 timer_div;   // Ticks at 16384Hz (in ms)
+    f64 timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
+    f64 timer_ly;    // Ticks at ~9180 Hz (every 0.1089 ms)
 
-    uint64_t dots;      // 0-70223
+    u64 dots;      // 0-70223
 
     int (*printf)(const char *fmt, ...);
 
-    uint64_t inst_executed;
+    u64 inst_executed;
     bool halted;
     bool stopped;
     bool running;
@@ -222,10 +231,10 @@ typedef struct GameBoy {
 } GameBoy;
 
 typedef struct Inst {
-    const uint8_t *data;
-    uint8_t size;
-    uint8_t min_cycles;
-    uint8_t max_cycles;
+    const u8 *data;
+    u8 size;
+    u8 min_cycles;
+    u8 max_cycles;
 } Inst;
 
 typedef enum Reg8 {
@@ -258,8 +267,9 @@ typedef enum Flag {
 } Flag;
 
 void gb_load_rom_file(GameBoy *gb, const char *path);
-void gb_load_rom(GameBoy *gb, uint8_t *raw, size_t size);
-void gb_tick(GameBoy *gb, double dt_ms);
+void gb_load_rom(GameBoy *gb, u8 *raw, size_t size);
+void gb_tick_us(GameBoy *gb, u64 dt_us);
+void gb_tick(GameBoy *gb, f64 dt_ms);
 
 Inst gb_fetch_inst(const GameBoy *gb);
 const char *gb_decode(Inst inst, char *buf, size_t size);
@@ -268,30 +278,30 @@ void gb_render(GameBoy *gb);
 
 void gb_dump(const GameBoy *gb);
 
-uint8_t gb_mem_read(const GameBoy *gb, uint16_t addr);
-void gb_mem_write(GameBoy *gb, uint16_t addr, uint8_t value);
+u8 gb_mem_read(const GameBoy *gb, u16 addr);
+void gb_mem_write(GameBoy *gb, u16 addr, u8 value);
 
-uint8_t gb_get_flag(const GameBoy *gb, Flag flag);
-void gb_set_flag(GameBoy *gb, Flag flag, uint8_t value);
+u8 gb_get_flag(const GameBoy *gb, Flag flag);
+void gb_set_flag(GameBoy *gb, Flag flag, u8 value);
 void gb_set_flags(GameBoy *gb, int z, int n, int h, int c);
 
-uint8_t gb_get_reg(const GameBoy *gb, Reg8 r8);
-uint16_t gb_get_reg16(const GameBoy *gb, Reg16 r16);
-void gb_set_reg(GameBoy *gb, Reg8 r8, uint8_t value);
-void gb_set_reg16(GameBoy *gb, Reg16 r16, uint16_t value);
+u8 gb_get_reg(const GameBoy *gb, Reg8 r8);
+u16 gb_get_reg16(const GameBoy *gb, Reg16 r16);
+void gb_set_reg(GameBoy *gb, Reg8 r8, u8 value);
+void gb_set_reg16(GameBoy *gb, Reg16 r16, u16 value);
 
 const char* gb_reg_to_str(Reg8 r8);
 const char* gb_reg16_to_str(Reg16 r16);
 
-uint8_t *read_entire_file(const char *path, size_t *size);
+u8 *read_entire_file(const char *path, size_t *size);
 
-static const uint8_t NINTENDO_LOGO[] = {
+static const u8 NINTENDO_LOGO[] = {
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
     0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
     0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 };
 
-static const uint8_t BOOT_ROM[] = {
+static const u8 BOOT_ROM[] = {
     0x31, 0xfe, 0xff, 0xaf, 0x21, 0xff, 0x9f, 0x32, 0xcb, 0x7c, 0x20, 0xfb, 0x21, 0x26, 0xff, 0x0e,
     0x11, 0x3e, 0x80, 0x32, 0xe2, 0x0c, 0x3e, 0xf3, 0xe2, 0x32, 0x3e, 0x77, 0x77, 0x3e, 0xfc, 0xe0,
     0x47, 0x11, 0x04, 0x01, 0x21, 0x10, 0x80, 0x1a, 0xcd, 0x95, 0x00, 0xcd, 0x96, 0x00, 0x13, 0x7b,

@@ -46,7 +46,7 @@ void test_fetch_inst(void)
             continue;
         }
 
-        gb.memory[0] = (uint8_t)b;
+        gb.memory[0] = (u8)b;
         gb_fetch_inst(&gb);
     }
     test_end
@@ -55,9 +55,9 @@ void test_fetch_inst(void)
 void test_inst_nop(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
+    Inst inst = {.data = (u8*)"\x00", .size = 1};
     gb.PC = start_pc;
 
     gb_exec(&gb, inst);
@@ -69,9 +69,9 @@ void test_inst_nop(void)
 void test_inst_stop(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x10", .size = 1};
+    Inst inst = {.data = (u8*)"\x10", .size = 1};
     gb.PC = start_pc;
 
     gb_exec(&gb, inst);
@@ -83,9 +83,9 @@ void test_inst_stop(void)
 void test_inst_ld_reg16_n(Reg16 reg)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t data[] = {0x01, 0x12, 0x34};
+    u8 data[] = {0x01, 0x12, 0x34};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -100,13 +100,13 @@ void test_inst_ld_reg16_n(Reg16 reg)
 void test_inst_ld_reg16_mem_a(Reg16 reg)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t addr = 0xC234;
-    uint8_t a = 0x99;
+    u16 start_pc = 0x0032;
+    u16 addr = 0xC234;
+    u8 a = 0x99;
     GameBoy gb = {0};
     gb_set_reg16(&gb, reg, addr);
     gb_set_reg(&gb, REG_A, a);
-    uint8_t data[] = {0x02};
+    u8 data[] = {0x02};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -121,14 +121,14 @@ void test_inst_ld_reg16_mem_a(Reg16 reg)
 void test_inst_ld_a_reg16_mem(Reg16 reg)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t addr = 0x1234;
-    uint8_t a = 0x33;
+    u16 start_pc = 0x0032;
+    u16 addr = 0x1234;
+    u8 a = 0x33;
     GameBoy gb = {0};
     gb_set_reg16(&gb, reg, addr);
     gb.memory[addr] = a;
 
-    uint8_t data[] = {0x0A};
+    u8 data[] = {0x0A};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -143,13 +143,13 @@ void test_inst_ld_a_reg16_mem(Reg16 reg)
 void test_inst_ldi_hl_mem_a(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0xC234;
-    uint8_t a = 0x99;
+    u16 start_pc = 0x0032;
+    u16 value = 0xC234;
+    u8 a = 0x99;
     GameBoy gb = {0};
     gb.HL = value;
     gb_set_reg(&gb, REG_A, a);
-    uint8_t data[] = {0x22};
+    u8 data[] = {0x22};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
 
@@ -164,13 +164,13 @@ void test_inst_ldi_hl_mem_a(void)
 void test_inst_ldi_a_hl_mem(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0x1234;
-    uint8_t a = 0x99;
+    u16 start_pc = 0x0032;
+    u16 value = 0x1234;
+    u8 a = 0x99;
     GameBoy gb = {0};
     gb.HL = value;
     gb.memory[gb.HL] = a;
-    uint8_t data[] = {0x2A};
+    u8 data[] = {0x2A};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
 
@@ -185,13 +185,13 @@ void test_inst_ldi_a_hl_mem(void)
 void test_inst_ldd_hl_mem_a(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0xC234;
-    uint8_t a = 0x99;
+    u16 start_pc = 0x0032;
+    u16 value = 0xC234;
+    u8 a = 0x99;
     GameBoy gb = {0};
     gb.HL = value;
     gb_set_reg(&gb, REG_A, a);
-    uint8_t data[] = {0x32};
+    u8 data[] = {0x32};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
 
@@ -206,13 +206,13 @@ void test_inst_ldd_hl_mem_a(void)
 void test_inst_ldd_a_hl_mem(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0x1234;
-    uint8_t a = 0x99;
+    u16 start_pc = 0x0032;
+    u16 value = 0x1234;
+    u8 a = 0x99;
     GameBoy gb = {0};
     gb.HL = value;
     gb.memory[gb.HL] = a;
-    uint8_t data[] = {0x3A};
+    u8 data[] = {0x3A};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
 
@@ -228,11 +228,11 @@ void test_inst_inc_reg16(Reg16 reg)
 {
     test_begin
     //printf("(%-50s)", gb_reg16_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0x1234;
+    u16 start_pc = 0x0032;
+    u16 value = 0x1234;
     GameBoy gb = {0};
     gb_set_reg16(&gb, reg, value);
-    uint8_t data[] = {0x03};
+    u8 data[] = {0x03};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -247,13 +247,13 @@ void test_inst_inc_reg16(Reg16 reg)
 void test_inst_inc_reg8(Reg8 reg)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0xFF;
+    u16 start_pc = 0x0032;
+    u8 value = 0xFF;
     GameBoy gb = {0};
     gb.HL = 0xC234;
     gb_set_reg(&gb, reg, value);
     gb_set_flag(&gb, Flag_N, 1);
-    uint8_t data[] = {0x04};
+    u8 data[] = {0x04};
     data[0] |= (reg << 3);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -261,7 +261,7 @@ void test_inst_inc_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, reg) == (uint8_t)(value + 1));
+    assert(gb_get_reg(&gb, reg) == (u8)(value + 1));
     // assert_flags(gb, "Z0H-");
     assert(gb_get_flag(&gb, Flag_Z) == 1);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -272,12 +272,12 @@ void test_inst_inc_reg8(Reg8 reg)
 void test_inst_dec_reg8(Reg8 reg)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0xFF;
+    u16 start_pc = 0x0032;
+    u8 value = 0xFF;
     GameBoy gb = {0};
     gb.HL = 0xC234;
     gb_set_reg(&gb, reg, value); // REG = $FF
-    uint8_t data[] = {0x05};
+    u8 data[] = {0x05};
     data[0] |= (reg << 3);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -285,7 +285,7 @@ void test_inst_dec_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, reg) == (uint8_t)(value - 1));
+    assert(gb_get_reg(&gb, reg) == (u8)(value - 1));
     // assert_flags(gb, "Z0H-");
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 1);
@@ -297,10 +297,10 @@ void test_inst_ld_reg8_n(Reg8 reg)
 {
     test_begin
     //printf("(%-50s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x06, 0x78};
+    u8 data[] = {0x06, 0x78};
     data[0] |= (reg << 3);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -312,10 +312,10 @@ void test_inst_ld_reg8_n(Reg8 reg)
     test_end
 }
 
-void test_inst_rot(GameBoy *gb, uint8_t opcode, uint8_t value)
+void test_inst_rot(GameBoy *gb, u8 opcode, u8 value)
 {
-    uint16_t start_pc = 0x0032;
-    uint8_t data[] = {opcode};
+    u16 start_pc = 0x0032;
+    u8 data[] = {opcode};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb->PC = start_pc;
     gb_set_reg(gb, REG_A, value);
@@ -406,17 +406,17 @@ void test_inst_rra(void)
 void test_inst_cpl(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0xFE;
+    u16 start_pc = 0x0032;
+    u8 value = 0xFE;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x2F", .size = 1};
+    Inst inst = {.data = (u8*)"\x2F", .size = 1};
     gb.PC = start_pc;
     gb_set_reg(&gb, REG_A, value);
 
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, REG_A) == (uint8_t)~value);
+    assert(gb_get_reg(&gb, REG_A) == (u8)~value);
     assert(gb_get_flag(&gb, Flag_N) == 1);
     assert(gb_get_flag(&gb, Flag_H) == 1);
     test_end
@@ -425,9 +425,9 @@ void test_inst_cpl(void)
 void test_inst_scf(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x37", .size = 1};
+    Inst inst = {.data = (u8*)"\x37", .size = 1};
     gb.PC = start_pc;
 
     gb_exec(&gb, inst);
@@ -442,9 +442,9 @@ void test_inst_scf(void)
 void test_inst_ccf(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x3F", .size = 1};
+    Inst inst = {.data = (u8*)"\x3F", .size = 1};
 
     for (int i = 0; i <= 1; i++) {
         gb.PC = start_pc;
@@ -463,10 +463,10 @@ void test_inst_ccf(void)
 void test_inst_ld_mem16_sp(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
-    uint16_t sp = 0x8754;
+    u16 start_pc = 0x0032;
+    u16 sp = 0x8754;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x08\x34\xC2", .size = 3};
+    Inst inst = {.data = (u8*)"\x08\x34\xC2", .size = 3};
     gb.PC = start_pc;
     gb_set_reg16(&gb, REG_SP, sp);
 
@@ -481,10 +481,10 @@ void test_inst_ld_mem16_sp(void)
 void test_inst_jr_n(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0x05;
-    uint8_t data[] = {0x18, n};
+    u8 n = 0x05;
+    u8 data[] = {0x18, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
 
@@ -497,10 +497,10 @@ void test_inst_jr_n(void)
 void test_inst_jr_nz_n_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x20, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x20, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_Z, 0);
@@ -514,10 +514,10 @@ void test_inst_jr_nz_n_taken(void)
 void test_inst_jr_nz_n_not_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x20, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x20, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_Z, 1);
@@ -531,10 +531,10 @@ void test_inst_jr_nz_n_not_taken(void)
 void test_inst_jr_z_n_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x28, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x28, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_Z, 1);
@@ -548,10 +548,10 @@ void test_inst_jr_z_n_taken(void)
 void test_inst_jr_z_n_not_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x28, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x28, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_Z, 0);
@@ -565,10 +565,10 @@ void test_inst_jr_z_n_not_taken(void)
 void test_inst_jr_nc_n_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x30, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x30, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_C, 0);
@@ -582,10 +582,10 @@ void test_inst_jr_nc_n_taken(void)
 void test_inst_jr_nc_n_not_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x30, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x30, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_C, 1);
@@ -599,10 +599,10 @@ void test_inst_jr_nc_n_not_taken(void)
 void test_inst_jr_c_n_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x38, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x38, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_C, 1);
@@ -616,10 +616,10 @@ void test_inst_jr_c_n_taken(void)
 void test_inst_jr_c_n_not_taken(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    uint8_t n = 0xFE;
-    uint8_t data[] = {0x38, n};
+    u8 n = 0xFE;
+    u8 data[] = {0x38, n};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_flag(&gb, Flag_C, 0);
@@ -635,15 +635,15 @@ void test_inst_add_hl_reg16(Reg16 reg)
 {
     test_begin
     //printf("(%-50s)", gb_reg16_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint16_t hl = 0x9A34;
-    uint16_t value = 0xDE78;
+    u16 start_pc = 0x0032;
+    u16 hl = 0x9A34;
+    u16 value = 0xDE78;
     //  0x9A34
     // +0xDE78
     // -------
     //  0x78AC
     GameBoy gb = {0};
-    uint8_t data[] = {0x09};
+    u8 data[] = {0x09};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -654,9 +654,9 @@ void test_inst_add_hl_reg16(Reg16 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_HL) {
-        assert(gb_get_reg16(&gb, REG_HL) == (uint16_t)(hl + hl));
+        assert(gb_get_reg16(&gb, REG_HL) == (u16)(hl + hl));
     } else {
-        assert(gb_get_reg16(&gb, REG_HL) == (uint16_t)(hl + value));
+        assert(gb_get_reg16(&gb, REG_HL) == (u16)(hl + value));
     }
     // -0HC
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -670,10 +670,10 @@ void test_inst_dec_reg16(Reg16 reg)
 {
     test_begin
     //printf("(%-50s)", gb_reg16_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint16_t value = 0xDE78;
+    u16 start_pc = 0x0032;
+    u16 value = 0xDE78;
     GameBoy gb = {0};
-    uint8_t data[] = {0x0B};
+    u8 data[] = {0x0B};
     data[0] |= (reg << 4);
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -682,7 +682,7 @@ void test_inst_dec_reg16(Reg16 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg16(&gb, reg) == (uint16_t)(value - 1));
+    assert(gb_get_reg16(&gb, reg) == (u16)(value - 1));
     test_end
 }
 
@@ -693,11 +693,11 @@ void test_inst_ld_reg8_reg8(Reg8 dst, Reg8 src)
     }
     test_begin
     //printf("(%s <- %s)", gb_reg_to_str(dst), gb_reg_to_str(src));
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0xC9;
+    u16 start_pc = 0x0032;
+    u8 value = 0xC9;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x40};
+    u8 data[] = {0x40};
     data[0] |= (dst << 3) | src;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -713,9 +713,9 @@ void test_inst_ld_reg8_reg8(Reg8 dst, Reg8 src)
 void test_inst_halt(void)
 {
     test_begin
-    uint16_t start_pc = 0x0032;
+    u16 start_pc = 0x0032;
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x76", .size = 1};
+    Inst inst = {.data = (u8*)"\x76", .size = 1};
     gb.PC = start_pc;
 
     gb_exec(&gb, inst);
@@ -728,12 +728,12 @@ void test_inst_add_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t a = 0x19;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 a = 0x19;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x80};
+    u8 data[] = {0x80};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -744,9 +744,9 @@ void test_inst_add_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a + a));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a + a));
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a + value));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a + value));
     }
     assert(gb_get_flag(&gb, Flag_N) == 0);
     test_end
@@ -758,7 +758,7 @@ void test_inst_add_reg8_zero_and_carry_flags(void)
     GameBoy gb = {0};
     gb_set_reg(&gb, REG_A, 0xFF);
     gb_set_reg(&gb, REG_B, 0x01);
-    Inst inst = {.data = (uint8_t*)"\x80", .size = 1};
+    Inst inst = {.data = (u8*)"\x80", .size = 1};
 
     gb_exec(&gb, inst);
 
@@ -771,7 +771,7 @@ void test_inst_add_reg8_half_carry_flag(void)
 {
     test_begin
     GameBoy gb = {0};
-    Inst inst = {.data = (uint8_t*)"\x80", .size = 1};
+    Inst inst = {.data = (u8*)"\x80", .size = 1};
 
     // Case 1
     //  0000 1000
@@ -815,12 +815,12 @@ void test_inst_adc_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint8_t c = 1;
-    uint8_t a = 0x19;
-    uint8_t value = 0xC3;
+    u8 c = 1;
+    u8 a = 0x19;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x88};
+    u8 data[] = {0x88};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, reg, value);
@@ -830,9 +830,9 @@ void test_inst_adc_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a + a + c));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a + a + c));
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a + value + c));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a + value + c));
     }
     assert(gb_get_flag(&gb, Flag_N) == 0);
     test_end
@@ -842,12 +842,12 @@ void test_inst_sub_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x90};
+    u8 data[] = {0x90};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -860,7 +860,7 @@ void test_inst_sub_reg8(Reg8 reg)
     if (reg == REG_A) {
         assert(gb_get_reg(&gb, REG_A) == 0);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a - value));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a - value));
     }
     assert(gb_get_flag(&gb, Flag_N) == 1);
     test_end
@@ -870,13 +870,13 @@ void test_inst_sbc_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t c = 1;
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 c = 1;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0x98};
+    u8 data[] = {0x98};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -888,9 +888,9 @@ void test_inst_sbc_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)-1);
+        assert(gb_get_reg(&gb, REG_A) == (u8)-1);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a - value - c));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a - value - c));
     }
     assert(gb_get_flag(&gb, Flag_N) == 1);
     test_end
@@ -900,12 +900,12 @@ void test_inst_and_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0xA0};
+    u8 data[] = {0xA0};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -918,7 +918,7 @@ void test_inst_and_reg8(Reg8 reg)
     if (reg == REG_A) {
         assert(gb_get_reg(&gb, REG_A) == a);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a & value));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a & value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -931,12 +931,12 @@ void test_inst_xor_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0xA8};
+    u8 data[] = {0xA8};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -949,7 +949,7 @@ void test_inst_xor_reg8(Reg8 reg)
     if (reg == REG_A) {
         assert(gb_get_reg(&gb, REG_A) == 0);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a ^ value));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a ^ value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == (reg == REG_A) ? 1 : 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -962,12 +962,12 @@ void test_inst_or_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint16_t start_pc = 0x0032;
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u16 start_pc = 0x0032;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
     gb.HL = 0xC234;
-    uint8_t data[] = {0xB0};
+    u8 data[] = {0xB0};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
@@ -980,7 +980,7 @@ void test_inst_or_reg8(Reg8 reg)
     if (reg == REG_A) {
         assert(gb_get_reg(&gb, REG_A) == a);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (uint8_t)(a | value));
+        assert(gb_get_reg(&gb, REG_A) == (u8)(a | value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -993,10 +993,10 @@ void test_inst_cp_reg8(Reg8 reg)
 {
     test_begin
     //printf("(%s)", gb_reg_to_str(reg));
-    uint8_t a = 0xDD;
-    uint8_t value = 0xC3;
+    u8 a = 0xDD;
+    u8 value = 0xC3;
     GameBoy gb = {0};
-    uint8_t data[] = {0xB8};
+    u8 data[] = {0xB8};
     data[0] |= reg;
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, reg, value);
@@ -1017,9 +1017,9 @@ void test_inst_jp_mem_hl(void)
 {
     test_begin
     GameBoy gb = {0};
-    uint8_t data[] = {0xE9};
+    u8 data[] = {0xE9};
     Inst inst = {.data = data, .size = sizeof(data)};
-    uint16_t addr = 0x1234;
+    u16 addr = 0x1234;
     gb.HL = addr;
 
     gb_exec(&gb, inst);
@@ -1032,7 +1032,7 @@ void test_inst_rrc(void)
 {
     test_begin
     GameBoy gb = {0};
-    uint8_t data[] = {0xCB, 0x08};
+    u8 data[] = {0xCB, 0x08};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, REG_B, 0x01);
 
@@ -1047,7 +1047,7 @@ void test_inst_sra(void)
 {
     test_begin
     GameBoy gb = {0};
-    uint8_t data[] = {0xCB, 0x28};
+    u8 data[] = {0xCB, 0x28};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, REG_B, 0x80);
 
@@ -1061,7 +1061,7 @@ void test_inst_add_a_hl_mem(void)
 {
     test_begin
     GameBoy gb = {0};
-    uint8_t data[] = {0x86};
+    u8 data[] = {0x86};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, REG_A, 0xFF);
     gb.HL = 0xC000;
@@ -1089,7 +1089,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00);
 
@@ -1102,7 +1102,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x0F); // BCD: we can only represent 0-9
 
@@ -1115,7 +1115,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0xF0); // BCD: we can only represent 0-9
 
@@ -1128,7 +1128,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x10); // BCD: we can only represent 0-9
 
@@ -1141,7 +1141,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 0, 0, 0, 1);
@@ -1158,7 +1158,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0xF0); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 0, 0, 0, 1);
@@ -1171,7 +1171,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 1, 1, 1, 0); // F = ZNH- (After subtraction)
@@ -1185,7 +1185,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 1, 1, 1, 1); // F = ZNHC (After subtraction)
@@ -1200,7 +1200,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x9A); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 0, 0, 0, 0); // F = ---- (After addition)
@@ -1215,7 +1215,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 0, 0, 1, 0); // F = ---- (After addition)
@@ -1230,7 +1230,7 @@ void test_inst_daa(void)
 
     {
         GameBoy gb = {0};
-        uint8_t data[] = {0x27};
+        u8 data[] = {0x27};
         Inst inst = {.data = data, .size = sizeof(data)};
         gb_set_reg(&gb, REG_A, 0x00); // BCD: we can only represent 0-9
         gb_set_flags(&gb, 0, 1, 0, 0); // F = -N-- (After subtraction)
@@ -1244,10 +1244,10 @@ void test_inst_daa(void)
     }
 
 #if 0
-    uint16_t start_pc = 0x0032;
-    uint8_t value = 0x33;
+    u16 start_pc = 0x0032;
+    u8 value = 0x33;
     GameBoy gb = {0};
-    uint8_t data[] = {0x27};
+    u8 data[] = {0x27};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb.PC = start_pc;
     gb_set_reg(&gb, REG_A, value);
@@ -1299,7 +1299,7 @@ void test_inst_cp_n(void)
 {
     test_begin
     GameBoy gb = {0};
-    uint8_t data[] = {0xFE, 0x90};
+    u8 data[] = {0xFE, 0x90};
     Inst inst = {.data = data, .size = sizeof(data)};
     gb_set_reg(&gb, REG_A, 0x90);
 
@@ -1499,14 +1499,14 @@ void test_render_lcd_on_bg_on(void)
 #include <sys/time.h>
 void foo(void)
 {
-    double freq = 4194304.0;
+    f64 freq = 4194304.0;
     {
     clock_t t1, t2;
     t1 = t2 = clock();
     while (t1 == t2) {
         t2 = clock();
     }
-    printf("%lf ms\n", (double)(t2 - t1) / CLOCKS_PER_SEC * 1000);
+    printf("%lf ms\n", (f64)(t2 - t1) / CLOCKS_PER_SEC * 1000);
     }
 
     {
@@ -1524,17 +1524,17 @@ void foo(void)
     // 1 s = 1000 ms = 1000 * 1000 us
 
     int cycles = 0;
-    //uint64_t us_elapsed = 0;
-    double us_per_cycle = 1000000.0 / 4194304.0;
-    double us_cycle = 0.0;
+    //u64 us_elapsed = 0;
+    f64 us_per_cycle = 1000000.0 / 4194304.0;
+    f64 us_cycle = 0.0;
     printf("Timing 1s\n");
     gettimeofday(&t1, 0);
     while (true) {
         gettimeofday(&t2, 0);
-        uint64_t us = (t2.tv_sec - t1.tv_sec) * 1000 * 1000 + (t2.tv_usec - t1.tv_usec);
+        u64 us = (t2.tv_sec - t1.tv_sec) * 1000 * 1000 + (t2.tv_usec - t1.tv_usec);
         t1 = t2;
         //us_elapsed += us;
-        us_cycle += (double)us;
+        us_cycle += (f64)us;
         while (us_cycle >= us_per_cycle) {
             us_cycle -= us_per_cycle;
             cycles += 1;
@@ -1722,7 +1722,7 @@ void test_vblank_interrupt_with_ime_not_set(void)
     gb.IME = 0;
     gb.memory[rIE] |= IEF_VBLANK;
 
-    Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
+    Inst inst = {.data = (u8*)"\x00", .size = 1};
     gb_exec(&gb, inst);
 
     assert(gb.PC == 1);
@@ -1737,7 +1737,7 @@ void test_vblank_interrupt_with_ime_set(void)
     gb.memory[rIE] |= IEF_VBLANK;
     gb.memory[rIF] |= IEF_VBLANK;
     
-    Inst inst = {.data = (uint8_t*)"\x00", .size = 1};
+    Inst inst = {.data = (u8*)"\x00", .size = 1};
     gb_exec(&gb, inst);
 
     assert(gb.PC == 0x0040);
@@ -1869,7 +1869,7 @@ void test_divider_register(void)
     {
         GameBoy gb = {0};
         gb.memory[rDIV] = 0x69;
-        Inst inst = {.data = (uint8_t*)"\x10\x00", .size = 2};
+        Inst inst = {.data = (u8*)"\x10\x00", .size = 2};
         gb_exec(&gb, inst);
         assert(gb.stopped == true);
 
@@ -1936,7 +1936,7 @@ void test_lcd_control_register(void)
         gb.memory[0] = 0x18; // JR -2
         gb.memory[1] = 0xfe;
         gb_mem_write(&gb, rLCDC, LCDCF_OFF); // $00
-        double dt = 0.0066;
+        f64 dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
             gb_tick(&gb, dt);
         }
@@ -1961,11 +1961,11 @@ void test_lcd_control_register(void)
         bool stat_11 = false;
         int min_ly = 1000000;
         int max_ly = -1;
-        double dt = 0.0066;
+        f64 dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
             gb_tick(&gb, dt);
-            uint8_t stat = gb.memory[rSTAT] & 3;
-            uint8_t ly = gb.memory[rLY];
+            u8 stat = gb.memory[rSTAT] & 3;
+            u8 ly = gb.memory[rLY];
             if (stat == 0) stat_00 = true;
             if (stat == 1) stat_01 = true;
             if (stat == 2) stat_10 = true;

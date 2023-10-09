@@ -39,21 +39,21 @@ static SDL_Renderer *renderer;
 static SDL_AudioDeviceID device;
 static ViewerType viewer_type = VT_GAME;
 
-static double frame_ms;
+static f64 frame_ms;
 
-static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int y, int w, int h)
+static void render_debug_tile(SDL_Renderer *renderer, u8 *tile, int x, int y, int w, int h)
 {
     // 8x8 pixels
     for (int row = 0; row < 8; row++) {
-        uint8_t low_bitplane  = tile[row*2+0];
-        uint8_t high_bitplane = tile[row*2+1];
+        u8 low_bitplane  = tile[row*2+0];
+        u8 high_bitplane = tile[row*2+1];
         for (int col = 0; col < 8; col++) {
-            uint8_t bit0 = (low_bitplane & 0x80) >> 7;
-            uint8_t bit1 = (high_bitplane & 0x80) >> 7;
+            u8 bit0 = (low_bitplane & 0x80) >> 7;
+            u8 bit1 = (high_bitplane & 0x80) >> 7;
             low_bitplane <<= 1;
             high_bitplane <<= 1;
 
-            uint8_t color_idx = (bit1 << 1) | bit0;
+            u8 color_idx = (bit1 << 1) | bit0;
             Color color = PALETTE[color_idx];
             SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
 
@@ -65,14 +65,14 @@ static void render_debug_tile(SDL_Renderer *renderer, uint8_t *tile, int x, int 
     }
 }
 
-static void render_debug_tiles_section(SDL_Renderer *renderer, uint8_t *tiles, int x, int y, int w, int h)
+static void render_debug_tiles_section(SDL_Renderer *renderer, u8 *tiles, int x, int y, int w, int h)
 {
     // 16x8 tiles
     SDL_Rect r = { x, y, w, h};
     SDL_RenderFillRect(renderer, &r);
 
-    float w_tile = w/16.0f;
-    float h_tile = h/8.0f;
+    f32 w_tile = w/16.0f;
+    f32 h_tile = h/8.0f;
     int tile_dim = (w_tile > h_tile) ? h_tile : w_tile;
 
     int xstart = (w - tile_dim*16)/2;
@@ -89,43 +89,43 @@ static void render_debug_tiles_section(SDL_Renderer *renderer, uint8_t *tiles, i
             SDL_RenderFillRect(renderer, &r);
 
             int tile_idx = row*16 + col; // 0-127
-            uint8_t *tile = tiles + tile_idx*16;
+            u8 *tile = tiles + tile_idx*16;
             render_debug_tile(renderer, tile, xtile, ytile, tile_dim, tile_dim);
         }
     }
 }
 
-static void render_debug_tiles(SDL_Renderer *renderer, int w, int h, uint8_t *tile_data)
+static void render_debug_tiles(SDL_Renderer *renderer, int w, int h, u8 *tile_data)
 {
     // 3 sections of 128 tiles (16x8 tiles)
     // Render tiles at $8000-$87FF
     {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        //uint8_t *tiles = gb->memory + 0x8000;
-        uint8_t *tiles = tile_data;
+        //u8 *tiles = gb->memory + 0x8000;
+        u8 *tiles = tile_data;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*0, w, h/3);
     }
 
     // Render tiles at $8800-$8FFF
     {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        //uint8_t *tiles = gb->memory + 0x8800;
-        uint8_t *tiles = tile_data + 0x800;
+        //u8 *tiles = gb->memory + 0x8800;
+        u8 *tiles = tile_data + 0x800;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*1, w, h/3);
     }
 
     // Render tiles at $9000-$97FF
     {
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
-        //uint8_t *tiles = gb->memory + 0x9000;
-        uint8_t *tiles = tile_data + 0x1000;
+        //u8 *tiles = gb->memory + 0x9000;
+        u8 *tiles = tile_data + 0x1000;
         render_debug_tiles_section(renderer, tiles, 0, (h/3)*2, w, h/3);
     }
 }
 
 static void render_debug_text(SDL_Renderer *renderer, const char *text, int row, int col)
 {
-    uint8_t tiles[] = {
+    u8 tiles[] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00,
         0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -226,7 +226,7 @@ static void render_debug_text(SDL_Renderer *renderer, const char *text, int row,
     for (size_t i = 0; i < sizeof(tiles); i++) tiles[i] = ~tiles[i];
     //for (int i = 0; i < 6; i++) {
     //    for (int j = 0; j < 16; j++) {
-    //        uint8_t *tile = tiles + i*16*16 + j*16;
+    //        u8 *tile = tiles + i*16*16 + j*16;
     //        render_debug_tile(renderer, tile, j*tile_dim, i*tile_dim, tile_dim, tile_dim);
     //    }
     //}
@@ -237,7 +237,7 @@ static void render_debug_text(SDL_Renderer *renderer, const char *text, int row,
         assert(c >= ' ' && c <= '~');
         int index = c - ' ';
         int offset = index*16;
-        uint8_t *tile = tiles + offset;
+        u8 *tile = tiles + offset;
         render_debug_tile(renderer, tile, col*tile_dim+i*tile_dim, row*tile_dim, tile_dim, tile_dim);
     }
 }
@@ -259,7 +259,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     render_debug_text(renderer, "Int.", row++, col);
     sprintf(text, "IME =%02X", gb->IME);
     render_debug_text(renderer, text, row++, col);
-    uint8_t intf = gb->memory[rIF];
+    u8 intf = gb->memory[rIF];
     sprintf(text, "IF  =%02X %s%s%s%s%s", intf,
         intf & IEF_VBLANK ? "VBLANK " : "",
         intf & IEF_STAT   ? "STAT "   : "",
@@ -267,7 +267,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         intf & IEF_SERIAL ? "SERIAL " : "",
         intf & IEF_HILO   ? "JOYPAD " : "");
     render_debug_text(renderer, text, row++, col);
-    uint8_t ie = gb->memory[rIE];
+    u8 ie = gb->memory[rIE];
     sprintf(text, "IE  =%02X %s%s%s%s%s", ie,
         ie & IEF_VBLANK ? "VBLANK " : "",
         ie & IEF_STAT   ? "STAT "   : "",
@@ -284,7 +284,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     render_debug_text(renderer, text, row++, col);
     sprintf(text, "TMA =%02X", gb->memory[rTMA]);
     render_debug_text(renderer, text, row++, col);
-    uint8_t tac = gb->memory[rTAC];
+    u8 tac = gb->memory[rTAC];
     if (tac & 4) {
         int freq[] = {4096, 262144, 65536, 16384};
         sprintf(text, "TAC =%02X %d Hz", tac, freq[tac & 3]);
@@ -295,7 +295,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
 
     row++;
     render_debug_text(renderer, "Display", row++, col);
-    uint8_t lcdc = gb->memory[rLCDC];
+    u8 lcdc = gb->memory[rLCDC];
     sprintf(text, "LCDC=%02X %s%s%s%s", lcdc,
         lcdc & LCDCF_ON    ? "LCD " : "",
         lcdc & LCDCF_WINON ? "WIN " : "",
@@ -303,7 +303,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         lcdc & LCDCF_BGON  ? "BG "  : ""
     );
     render_debug_text(renderer, text, row++, col);
-    uint8_t stat = gb->memory[rSTAT];
+    u8 stat = gb->memory[rSTAT];
     sprintf(text, "STAT=%02X %s", stat, stat & STATF_LYC ? "LYC" : "");
     render_debug_text(renderer, text, row++, col);
     sprintf(text, "SCX =%02X", gb->memory[rSCX]);
@@ -484,13 +484,13 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
         int pixel_dim = min_dim / 160; // GameBoy pixel size
         int x = (w - (160*pixel_dim))/2;
         int y = (h - (144*pixel_dim))/2;
-        uint16_t scx = gb->memory[rSCX];
-        uint16_t scy = gb->memory[rSCY];
+        u16 scx = gb->memory[rSCX];
+        u16 scy = gb->memory[rSCY];
 
         for (int row = 0; row < 144; row++) {
-            uint16_t px_row = (row+scy) % 256;
+            u16 px_row = (row+scy) % 256;
             for (int col = 0; col < 160; col++) {
-                uint16_t px_col = (col+scx) % 256;
+                u16 px_col = (col+scx) % 256;
                 Color color = gb->display[px_row*256 + px_col];
                 SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(color));
                 SDL_Rect r = {
@@ -579,7 +579,7 @@ static void play_square_wave(int freq, int ms, int duty_cycle)
 
     // 48000 samples    => 1 s      => 1000 ms
     //   120 samples    => 1/400 s  => 1000/400 ms
-    int samples_per_cycle = (float)SAMPLE_RATE / (float)freq;
+    int samples_per_cycle = (f32)SAMPLE_RATE / (f32)freq;
     int samples_high;
     switch (duty_cycle) {
         case 0:
@@ -599,9 +599,9 @@ static void play_square_wave(int freq, int ms, int duty_cycle)
 
     int sample_count = (ms*SAMPLE_RATE) / 1000;
     assert(sample_count < 48000);
-    float samples[48000] = {0};
+    f32 samples[48000] = {0};
     for (int i = 0; i < sample_count; i++) {
-        float sample = (i % samples_per_cycle) < samples_high ? 1.0f : 0.0f;
+        f32 sample = (i % samples_per_cycle) < samples_high ? 1.0f : 0.0f;
         sample *= VOLUME;
 
         int sweep_index = i / samples_per_sweep;
@@ -618,7 +618,7 @@ static void play_square_wave(int freq, int ms, int duty_cycle)
 static void tile_viewer(const char *file_path)
 {
     size_t size;
-    uint8_t *tile_data = read_entire_file(file_path, &size);
+    u8 *tile_data = read_entire_file(file_path, &size);
     printf("Tiledata size: %ld\n", size);
 
     SDL_Event e;
@@ -713,10 +713,10 @@ static void sdl_process_events(GameBoy *gb)
 
                     printf("OAM $FE00-$FE9F:\n");
                     for (int i = 0; i < 40; i++) {
-                        uint8_t y = gb->memory[_OAMRAM + i*4 + 0] - 16;
-                        uint8_t x = gb->memory[_OAMRAM + i*4 + 1] - 8;
-                        uint8_t tile_idx = gb->memory[_OAMRAM + i*4 + 2];
-                        uint8_t attribs = gb->memory[_OAMRAM + i*4 + 3];
+                        u8 y = gb->memory[_OAMRAM + i*4 + 0] - 16;
+                        u8 x = gb->memory[_OAMRAM + i*4 + 1] - 8;
+                        u8 tile_idx = gb->memory[_OAMRAM + i*4 + 2];
+                        u8 attribs = gb->memory[_OAMRAM + i*4 + 3];
                         printf("X: %3d, Y: %3d, Tile: %3d (%02X), Attrib: %02X\n",
                             x, y, tile_idx, tile_idx, attribs);
                     }
@@ -776,7 +776,7 @@ void emulator(const char *file_path)
         Uint64 curr_counter = SDL_GetPerformanceCounter();
         Uint64 delta_counter = curr_counter - prev_counter;
         prev_counter = curr_counter;
-        double dt_ms = (double)(1000.0 * delta_counter) / counter_freq;
+        f64 dt_ms = (f64)(1000.0 * delta_counter) / counter_freq;
         frame_ms += dt_ms;
 
         sdl_process_events(&gb);
