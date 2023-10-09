@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -xe
 
@@ -8,5 +8,11 @@ LIBS="`pkg-config --libs sdl2`"
 
 clang $CFLAGS -O3 -o gb $LIBS gb_sdl.c gb.c
 clang $CFLAGS -o test gb_test.c gb.c
+
+if ! command -v rgbasm &> /dev/null
+then
+    echo "rgbasm is not installed"
+    exit 0
+fi
 
 cd test-roms && ./build.sh
