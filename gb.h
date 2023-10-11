@@ -11,24 +11,34 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+typedef int64_t  s64;
+
 typedef float  f32;
 typedef double f64;
 
 typedef u32 Color;
 extern const Color PALETTE[4];
 
+#define BIT_CLR(x, index) (x) &= ~(1 << (index))
+#define BIT_SET(x, index) (x) |=  (1 << (index))
+#define BIT_ASSIGN(x, index, value) do {                  \
+    if (value) BIT_SET(x, index); else BIT_CLR(x, index); \
+} while (false)
+
 #define WIDTH  160 // 20 tiles
 #define HEIGHT 144 // 18 tiles
 
-#define CPU_FREQ    4194304.0 // 4.19 MHz
+#define CPU_FREQ    4194304.0 // 4.19MHz|4194304 cycles/s|~4194 cycles/ms|~4 cycles/us
 #define MCYCLE_MS   (1000.0 / 1048576.0)
 #define VSYNC       59.73
 #define HSYNC       9198.0  // 9.198 KHz
 
+#define SCANLINES_PER_FRAME 154
 #define DOTS_PER_FRAME      70224
 #define DOTS_PER_SCANLINE   456     // 144 frame scanlines + 10 vblank scanlines = 153
 #define DOTS_TO_MS(dots) (f64)((1000.0 / (VSYNC*DOTS_PER_FRAME))*(dots))
 #define MS_TO_DOTS(ms)   (u64)(((VSYNC*DOTS_PER_FRAME) / 1000.0)*(ms))
+#define TICKS_TO_MS(ticks) (f64)(0.001*(ticks))
 
 // 154 scanlines (144 lines displayed and 10 lines of VBlank)
 // 4 dots per cycle (~4.194 MHz, 1 frame takes 70224 dots)
@@ -156,14 +166,64 @@ extern const Color PALETTE[4];
 #define P1F_GET_DPAD 0x20
 #define P1F_GET_NONE (P1F_GET_BTN | P1F_GET_DPAD)
 
+typedef struct Timer {
+    u64 iterations;
+    u64 dt_ticks;
+    u64 elapsed_ticks;
+    u64 prev_ticks;
+    u64 curr_ticks;
+} Timer;
+
+typedef enum PPU_Mode {
+    PM_HBLANK = 0,
+    PM_VBLANK = 1,
+    PM_OAM = 2,
+    PM_DRAWING = 3,
+} PPU_Mode;
+
+typedef struct PPU {
+    bool frame_started;
+    bool scanline_started;
+
+    u64 frame;
+    u32 scanline;
+    u32 dot;
+    PPU_Mode mode;
+
+    int scanline_mode_count;
+
+    f64 frame_timer;
+    f64 scanline_timer;
+    f64 dot_timer;
+} PPU;
+
+typedef struct ROM_Header {
+    u8 entry[4];       // 0100-0103 (4)
+    u8 logo[48];       // 0104-0133 (48)
+    char title[16];    // 0134-0143 (16)
+                       // 013F-0142 (4)    Manufacturer code in new cartridges
+                       // 0143      (1)    CGB flag ($80 CGB compat, $C0 CGB only)
+    u8 new_licensee[2];// 0144-0145 (2)    Nintendo, EA, Bandai, ...
+    u8 sgb;            // 0146      (1)
+    u8 cart_type;      // 0147      (1)    ROM Only, MBC1, MBC1+RAM, ...
+    u8 rom_size;       // 0148      (1)    32KiB, 64KiB, 128KiB, ...
+    u8 ram_size;       // 0149      (1)    0, 8KiB, 32KiB, ...
+    u8 dest_code;      // 014A      (1)    Japan / Overseas
+    u8 old_licensee;   // 014B      (1)
+    u8 mask_version;   // 014C      (1)    Usually 0
+    u8 header_check;   // 014D      (1)    Check of bytes 0134-014C (Boot ROM)
+    u8 global_check[2];// 014E-014F (2)    Not verified
+} ROM_Header;
+
+
 typedef struct GameBoy {
     // CPU freq:        4.194304 MHz    (~4194304 cycles/s)
     // Horizontal sync: 9.198 KHz       ( 0.10871929 ms/line)
     // Vertical sync:   59.73 Hz        (16.74200569 ms/frame)
-    u16 AF; // Accumulator & Flags
-    u16 BC;
-    u16 DE;
-    u16 HL;
+    union { u16 AF; struct { u8 F; u8 A; }; }; // Accumulator & Flags
+    union { u16 BC; struct { u8 C; u8 B; }; };
+    union { u16 DE; struct { u8 E; u8 D; }; };
+    union { u16 HL; struct { u8 L; u8 H; }; };
     u16 SP; // Stack Pointer
     u16 PC; // Program Counter
 
@@ -210,10 +270,15 @@ typedef struct GameBoy {
     u8 dpad_left;
     u8 dpad_right;
 
+    PPU ppu;
+
     // Timers
-    u64 elapsed_us;// Microseconds elapsed since the start
-    f64 elapsed_ms;  // Milliseconds elapsed since the start
-    f64 timer_mcycle;// Timer for counting Mcycles (~1 MHz => 1048576 Hz)
+    Timer timer;
+
+    u64 elapsed_cycles; // 4194304 cycles/s
+    u64 elapsed_us;     // Microseconds elapsed since the start
+    f64 elapsed_ms;     // Milliseconds elapsed since the start
+    f64 timer_mcycle;   // Timer for counting Mcycles (~1 MHz => 1048576 Hz)
     f64 timer_clock;
     f64 timer_div;   // Ticks at 16384Hz (in ms)
     f64 timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
@@ -266,32 +331,56 @@ typedef enum Flag {
     //FLAG_COUNT,
 } Flag;
 
-void gb_load_rom_file(GameBoy *gb, const char *path);
-void gb_load_rom(GameBoy *gb, u8 *raw, size_t size);
-void gb_tick_us(GameBoy *gb, u64 dt_us);
-void gb_tick(GameBoy *gb, f64 dt_ms);
-
-Inst gb_fetch_inst(const GameBoy *gb);
-const char *gb_decode(Inst inst, char *buf, size_t size);
+// GameBoy
+void gb_init(GameBoy *gb, int argc, char **argv);
+void gb_update(GameBoy *gb);
 bool gb_exec(GameBoy *gb, Inst inst);
-void gb_render(GameBoy *gb);
 
-void gb_dump(const GameBoy *gb);
+// CPU
+void cpu_update(GameBoy *gb);
 
-u8 gb_mem_read(const GameBoy *gb, u16 addr);
-void gb_mem_write(GameBoy *gb, u16 addr, u8 value);
-
+#define UNCHANGED (-1)
 u8 gb_get_flag(const GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, u8 value);
 void gb_set_flags(GameBoy *gb, int z, int n, int h, int c);
 
-u8 gb_get_reg(const GameBoy *gb, Reg8 r8);
+u8 gb_get_reg8(const GameBoy *gb, Reg8 r8);
 u16 gb_get_reg16(const GameBoy *gb, Reg16 r16);
 void gb_set_reg(GameBoy *gb, Reg8 r8, u8 value);
 void gb_set_reg16(GameBoy *gb, Reg16 r16, u16 value);
 
-const char* gb_reg_to_str(Reg8 r8);
+Inst gb_fetch(const GameBoy *gb);
+const char *gb_decode(Inst inst, char *buf, size_t size);
+
+void gb_tick_ms(GameBoy *gb, f64 dt_ms);
+void gb_tick_us(GameBoy *gb, u64 dt_us);
+
+// PPU
+void ppu_init(PPU *ppu);
+void ppu_update(GameBoy *gb);
+
+void gb_render(GameBoy *gb);
+
+// Memory Bus
+u8 gb_mem_read(const GameBoy *gb, u16 addr);
+void gb_mem_write(GameBoy *gb, u16 addr, u8 value);
+
+// Cartridge
+void gb_load_rom_file(GameBoy *gb, const char *path);
+void gb_load_rom(GameBoy *gb, u8 *raw, size_t size);
+
+// APU
+
+// Utils/Debug
+void gb_dump(const GameBoy *gb);
+
+const char* gb_flag_to_str(Flag f);
+const char* gb_reg8_to_str(Reg8 r8);
 const char* gb_reg16_to_str(Reg16 r16);
+
+#define gb_log_inst(...) gb_log_inst_internal(gb, __VA_ARGS__)
+void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...);
+
 
 u8 *read_entire_file(const char *path, size_t *size);
 

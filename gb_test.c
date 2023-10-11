@@ -35,7 +35,7 @@
 
 //////////////////////////////////////////////////////////////////////
 
-void test_fetch_inst(void)
+void test_fetch(void)
 {
     test_begin
     GameBoy gb = {0};
@@ -47,7 +47,7 @@ void test_fetch_inst(void)
         }
 
         gb.memory[0] = (u8)b;
-        gb_fetch_inst(&gb);
+        gb_fetch(&gb);
     }
     test_end
 }
@@ -136,7 +136,7 @@ void test_inst_ld_a_reg16_mem(Reg16 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, REG_A) == a);
+    assert(gb_get_reg8(&gb, REG_A) == a);
     test_end
 }
 
@@ -177,7 +177,7 @@ void test_inst_ldi_a_hl_mem(void)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, REG_A) == gb.memory[value]);
+    assert(gb_get_reg8(&gb, REG_A) == gb.memory[value]);
     assert(gb.HL == value + 1);
     test_end
 }
@@ -219,7 +219,7 @@ void test_inst_ldd_a_hl_mem(void)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, REG_A) == gb.memory[value]);
+    assert(gb_get_reg8(&gb, REG_A) == gb.memory[value]);
     assert(gb.HL == value - 1);
     test_end
 }
@@ -261,7 +261,7 @@ void test_inst_inc_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, reg) == (u8)(value + 1));
+    assert(gb_get_reg8(&gb, reg) == (u8)(value + 1));
     // assert_flags(gb, "Z0H-");
     assert(gb_get_flag(&gb, Flag_Z) == 1);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -285,7 +285,7 @@ void test_inst_dec_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, reg) == (u8)(value - 1));
+    assert(gb_get_reg8(&gb, reg) == (u8)(value - 1));
     // assert_flags(gb, "Z0H-");
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 1);
@@ -308,7 +308,7 @@ void test_inst_ld_reg8_n(Reg8 reg)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 2);
-    assert(gb_get_reg(&gb, reg) == 0x78);
+    assert(gb_get_reg8(&gb, reg) == 0x78);
     test_end
 }
 
@@ -332,7 +332,7 @@ void test_inst_rlca(void)
     test_begin
     GameBoy gb = {0};
     test_inst_rot(&gb, 0x07, 0x81);
-    assert(gb_get_reg(&gb, REG_A) == 0x03);
+    assert(gb_get_reg8(&gb, REG_A) == 0x03);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -351,7 +351,7 @@ void test_inst_rrca(void)
     test_begin
     GameBoy gb = {0};
     test_inst_rot(&gb, 0x0F, 0x81);
-    assert(gb_get_reg(&gb, REG_A) == 0xC0);
+    assert(gb_get_reg8(&gb, REG_A) == 0xC0);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -370,7 +370,7 @@ void test_inst_rla(void)
     test_begin
     GameBoy gb = {0};
     test_inst_rot(&gb, 0x17, 0x81);
-    assert(gb_get_reg(&gb, REG_A) == 0x02);
+    assert(gb_get_reg8(&gb, REG_A) == 0x02);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -389,7 +389,7 @@ void test_inst_rra(void)
     test_begin
     GameBoy gb = {0};
     test_inst_rot(&gb, 0x1F, 0x81);
-    assert(gb_get_reg(&gb, REG_A) == 0x40);
+    assert(gb_get_reg8(&gb, REG_A) == 0x40);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -416,7 +416,7 @@ void test_inst_cpl(void)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, REG_A) == (u8)~value);
+    assert(gb_get_reg8(&gb, REG_A) == (u8)~value);
     assert(gb_get_flag(&gb, Flag_N) == 1);
     assert(gb_get_flag(&gb, Flag_H) == 1);
     test_end
@@ -706,7 +706,7 @@ void test_inst_ld_reg8_reg8(Reg8 dst, Reg8 src)
     gb_exec(&gb, inst);
 
     assert(gb.PC == start_pc + 1);
-    assert(gb_get_reg(&gb, dst) == value);
+    assert(gb_get_reg8(&gb, dst) == value);
     test_end
 }
 
@@ -744,9 +744,9 @@ void test_inst_add_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a + a));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a + a));
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a + value));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a + value));
     }
     assert(gb_get_flag(&gb, Flag_N) == 0);
     test_end
@@ -830,9 +830,9 @@ void test_inst_adc_reg8(Reg8 reg)
     gb_exec(&gb, inst);
 
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a + a + c));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a + a + c));
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a + value + c));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a + value + c));
     }
     assert(gb_get_flag(&gb, Flag_N) == 0);
     test_end
@@ -858,9 +858,9 @@ void test_inst_sub_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == 0);
+        assert(gb_get_reg8(&gb, REG_A) == 0);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a - value));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a - value));
     }
     assert(gb_get_flag(&gb, Flag_N) == 1);
     test_end
@@ -888,9 +888,9 @@ void test_inst_sbc_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == (u8)-1);
+        assert(gb_get_reg8(&gb, REG_A) == (u8)-1);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a - value - c));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a - value - c));
     }
     assert(gb_get_flag(&gb, Flag_N) == 1);
     test_end
@@ -916,9 +916,9 @@ void test_inst_and_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == a);
+        assert(gb_get_reg8(&gb, REG_A) == a);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a & value));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a & value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -947,9 +947,9 @@ void test_inst_xor_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == 0);
+        assert(gb_get_reg8(&gb, REG_A) == 0);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a ^ value));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a ^ value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == (reg == REG_A) ? 1 : 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -978,9 +978,9 @@ void test_inst_or_reg8(Reg8 reg)
 
     assert(gb.PC == start_pc + 1);
     if (reg == REG_A) {
-        assert(gb_get_reg(&gb, REG_A) == a);
+        assert(gb_get_reg8(&gb, REG_A) == a);
     } else {
-        assert(gb_get_reg(&gb, REG_A) == (u8)(a | value));
+        assert(gb_get_reg8(&gb, REG_A) == (u8)(a | value));
     }
     assert(gb_get_flag(&gb, Flag_Z) == 0);
     assert(gb_get_flag(&gb, Flag_N) == 0);
@@ -1038,7 +1038,7 @@ void test_inst_rrc(void)
 
     gb_exec(&gb, inst);
 
-    assert(gb_get_reg(&gb, REG_B) == 0x80);
+    assert(gb_get_reg8(&gb, REG_B) == 0x80);
     assert(gb_get_flag(&gb, Flag_C) == 1);
     test_end
 }
@@ -1053,7 +1053,7 @@ void test_inst_sra(void)
 
     gb_exec(&gb, inst);
 
-    assert(gb_get_reg(&gb, REG_B) == 0xC0);
+    assert(gb_get_reg8(&gb, REG_B) == 0xC0);
     test_end
 }
 
@@ -1073,7 +1073,7 @@ void test_inst_add_a_hl_mem(void)
 
     gb_exec(&gb, inst);
 
-    assert(gb_get_reg(&gb, REG_A) == 0x00);
+    assert(gb_get_reg8(&gb, REG_A) == 0x00);
     assert(gb_get_flag(&gb, Flag_Z) == 1);
     assert(gb_get_flag(&gb, Flag_N) == 0);
     assert(gb_get_flag(&gb, Flag_H) == 1);
@@ -1095,7 +1095,7 @@ void test_inst_daa(void)
 
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_reg8(&gb, REG_A) == 0x00);
         assert(gb_get_flag(&gb, Flag_Z) == 1);
         assert(gb_get_flag(&gb, Flag_C) == 0);
     }
@@ -1108,7 +1108,7 @@ void test_inst_daa(void)
 
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x15);
+        assert(gb_get_reg8(&gb, REG_A) == 0x15);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_C) == 0);
     }
@@ -1121,7 +1121,7 @@ void test_inst_daa(void)
 
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x50);
+        assert(gb_get_reg8(&gb, REG_A) == 0x50);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_C) == 1);
     }
@@ -1134,7 +1134,7 @@ void test_inst_daa(void)
 
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x10);
+        assert(gb_get_reg8(&gb, REG_A) == 0x10);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_C) == 0);
     }
@@ -1151,7 +1151,7 @@ void test_inst_daa(void)
         //   1 00 C=1
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x60);
+        assert(gb_get_reg8(&gb, REG_A) == 0x60);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_C) == 1);
     }
@@ -1164,7 +1164,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 0, 0, 0, 1);
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x50);
+        assert(gb_get_reg8(&gb, REG_A) == 0x50);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_C) == 1);
     }
@@ -1177,7 +1177,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 1, 1, 1, 0); // F = ZNH- (After subtraction)
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0xFA);
+        assert(gb_get_reg8(&gb, REG_A) == 0xFA);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_N) == 1);
         assert(gb_get_flag(&gb, Flag_C) == 0);
@@ -1191,7 +1191,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 1, 1, 1, 1); // F = ZNHC (After subtraction)
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x9A);
+        assert(gb_get_reg8(&gb, REG_A) == 0x9A);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_N) == 1);
         assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -1206,7 +1206,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 0, 0, 0, 0); // F = ---- (After addition)
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_reg8(&gb, REG_A) == 0x00);
         assert(gb_get_flag(&gb, Flag_Z) == 1);
         assert(gb_get_flag(&gb, Flag_N) == 0);
         assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -1221,7 +1221,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 0, 0, 1, 0); // F = ---- (After addition)
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x06);
+        assert(gb_get_reg8(&gb, REG_A) == 0x06);
         assert(gb_get_flag(&gb, Flag_Z) == 0);
         assert(gb_get_flag(&gb, Flag_N) == 0);
         assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -1236,7 +1236,7 @@ void test_inst_daa(void)
         gb_set_flags(&gb, 0, 1, 0, 0); // F = -N-- (After subtraction)
         gb_exec(&gb, inst);
 
-        assert(gb_get_reg(&gb, REG_A) == 0x00);
+        assert(gb_get_reg8(&gb, REG_A) == 0x00);
         assert(gb_get_flag(&gb, Flag_Z) == 1);
         assert(gb_get_flag(&gb, Flag_N) == 1);
         assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -1305,7 +1305,7 @@ void test_inst_cp_n(void)
 
     gb_exec(&gb, inst);
 
-    assert(gb_get_reg(&gb, REG_A) == 0x90);
+    assert(gb_get_reg8(&gb, REG_A) == 0x90);
     assert(gb_get_flag(&gb, Flag_Z) == 1);
     assert(gb_get_flag(&gb, Flag_N) == 1);
     assert(gb_get_flag(&gb, Flag_H) == 0);
@@ -1318,10 +1318,10 @@ void test_time_nop(void)
     test_begin
     GameBoy gb = {0};
 
-    gb_tick(&gb, 0);
+    gb_tick_ms(&gb, 0);
     assert(gb.PC == 0);
 
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 1);
     test_end
 }
@@ -1332,9 +1332,9 @@ void test_time_inc_reg16(void)
     GameBoy gb = {0};
     gb.memory[0] = 0x03;
 
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 1);
     test_end
 }
@@ -1345,15 +1345,15 @@ void test_time_add_a_mem_hl(void)
     GameBoy gb = {0};
     gb.memory[0] = 0x86;
 
-    Inst inst = gb_fetch_inst(&gb);
+    Inst inst = gb_fetch(&gb);
     assert(inst.min_cycles == 8);
     assert(inst.max_cycles == 8);
 
-    gb_tick(&gb, 0);
+    gb_tick_ms(&gb, 0);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 1);
 
     test_end
@@ -1368,15 +1368,15 @@ void test_time_jr_z(void)
 
     // JP taken
     gb_set_flag(&gb, Flag_Z, 1);
-    gb_tick(&gb, 2*MCYCLE_MS);
+    gb_tick_ms(&gb, 2*MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 7);
     
     // JP not taken
     gb.PC = 0;
     gb_set_flag(&gb, Flag_Z, 0);
-    gb_tick(&gb, 2*MCYCLE_MS);
+    gb_tick_ms(&gb, 2*MCYCLE_MS);
     assert(gb.PC == 2);
 
     test_end
@@ -1393,18 +1393,18 @@ void test_time_ret_z(void)
 
     // RET taken
     gb_set_flag(&gb, Flag_Z, 1);
-    gb_tick(&gb, 4*MCYCLE_MS);
+    gb_tick_ms(&gb, 4*MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0x1234);
 
     // RET not taken
     gb.PC = 0;
     gb.SP = 0xD000;
     gb_set_flag(&gb, Flag_Z, 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 1);
 
     test_end
@@ -1420,15 +1420,15 @@ void test_time_jp_z(void)
 
     // JP taken
     gb_set_flag(&gb, Flag_Z, 1);
-    gb_tick(&gb, 3*MCYCLE_MS);
+    gb_tick_ms(&gb, 3*MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0x1234);
     
     // JP not taken
     gb.PC = 0;
     gb_set_flag(&gb, Flag_Z, 0);
-    gb_tick(&gb, 3*MCYCLE_MS);
+    gb_tick_ms(&gb, 3*MCYCLE_MS);
     assert(gb.PC == 3);
 
     test_end
@@ -1444,17 +1444,17 @@ void test_time_call_z(void)
 
     // CALL taken
     gb_set_flag(&gb, Flag_Z, 1);
-    gb_tick(&gb, 5*MCYCLE_MS);
+    gb_tick_ms(&gb, 5*MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 0x1234);
 
     // CALL not taken
     gb.PC = 0;
     gb_set_flag(&gb, Flag_Z, 0);
-    gb_tick(&gb, 2*MCYCLE_MS);
+    gb_tick_ms(&gb, 2*MCYCLE_MS);
     assert(gb.PC == 0);
-    gb_tick(&gb, MCYCLE_MS);
+    gb_tick_ms(&gb, MCYCLE_MS);
     assert(gb.PC == 3);
 
     test_end
@@ -1855,13 +1855,13 @@ void test_divider_register(void)
     // DIV increments at a rate of 16384 Hz
     {
         GameBoy gb = {0};
-        gb_tick(&gb, 0);
+        gb_tick_ms(&gb, 0);
         assert(gb.memory[rDIV] == 0);
 
-        gb_tick(&gb, 1000.0 / 16384);
+        gb_tick_ms(&gb, 1000.0 / 16384);
         assert(gb.memory[rDIV] == 1);
 
-        gb_tick(&gb, 10 * (1000.0 / 16384));
+        gb_tick_ms(&gb, 10 * (1000.0 / 16384));
         assert(gb.memory[rDIV] == 11);
     }
 
@@ -1893,22 +1893,22 @@ void test_timer_counter_register(void)
 
         gb.memory[rTIMA] = 0;
         gb.memory[rTAC] |= 0; // 4096 Hz
-        gb_tick(&gb, 1000.0 / 4096);
+        gb_tick_ms(&gb, 1000.0 / 4096);
         assert(gb.memory[rTIMA] == 1);
 
         gb.memory[rTIMA] = 0;
         gb.memory[rTAC] |= 1; // 262144 Hz
-        gb_tick(&gb, 1000.0 / 262144);
+        gb_tick_ms(&gb, 1000.0 / 262144);
         assert(gb.memory[rTIMA] == 1);
 
         gb.memory[rTIMA] = 0;
         gb.memory[rTAC] |= 2; // 65536 Hz
-        gb_tick(&gb, 1000.0 / 65536);
+        gb_tick_ms(&gb, 1000.0 / 65536);
         assert(gb.memory[rTIMA] == 1);
 
         gb.memory[rTIMA] = 0;
         gb.memory[rTAC] |= 3; // 16384 Hz
-        gb_tick(&gb, 1000.0 / 16384);
+        gb_tick_ms(&gb, 1000.0 / 16384);
         assert(gb.memory[rTIMA] == 1);
     }
 
@@ -1919,7 +1919,7 @@ void test_timer_counter_register(void)
 
         gb.memory[rTIMA] = 0xFF;
         gb.memory[rTAC] |= 0; // 4096 Hz
-        gb_tick(&gb, 1000.0 / 4096);
+        gb_tick_ms(&gb, 1000.0 / 4096);
         assert(gb.memory[rTIMA] == 0);
         assert(gb.memory[rIF] & 0x04);
 
@@ -1938,7 +1938,7 @@ void test_lcd_control_register(void)
         gb_mem_write(&gb, rLCDC, LCDCF_OFF); // $00
         f64 dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
-            gb_tick(&gb, dt);
+            gb_tick_ms(&gb, dt);
         }
         assert(gb.memory[rLY] == 0);
         assert((gb.memory[rSTAT] & 7) == 0);
@@ -1963,7 +1963,7 @@ void test_lcd_control_register(void)
         int max_ly = -1;
         f64 dt = 0.0066;
         for (int i = 0; i < 5000; i++) {
-            gb_tick(&gb, dt);
+            gb_tick_ms(&gb, dt);
             u8 stat = gb.memory[rSTAT] & 3;
             u8 ly = gb.memory[rLY];
             if (stat == 0) stat_00 = true;
@@ -2002,7 +2002,7 @@ void test_lcd_control_register(void)
         gb.memory[0x9800] = tile_idx1;
         gb.memory[0x9801] = tile_idx2;
 
-        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+        for (int i = 0; i < 5000; i++) gb_tick_ms(&gb, 0.0066);
 
         for (size_t row = 0; row < 256; row++) {
             for (size_t col = 0; col < 256; col++) {
@@ -2031,7 +2031,7 @@ void test_lcd_control_register(void)
         gb.memory[0x9800] = tile_idx1;
         gb.memory[0x9801] = tile_idx2;
 
-        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+        for (int i = 0; i < 5000; i++) gb_tick_ms(&gb, 0.0066);
 
         for (size_t row = 0; row < 256; row++) {
             for (size_t col = 0; col < 256; col++) {
@@ -2060,7 +2060,7 @@ void test_lcd_control_register(void)
         gb.memory[0x9C00] = tile_idx1;
         gb.memory[0x9C01] = tile_idx2;
 
-        for (int i = 0; i < 5000; i++) gb_tick(&gb, 0.0066);
+        for (int i = 0; i < 5000; i++) gb_tick_ms(&gb, 0.0066);
 
         for (size_t row = 0; row < 256; row++) {
             for (size_t col = 0; col < 256; col++) {
@@ -2092,13 +2092,13 @@ void test_lcd_status_register(void)
     // Mode 2 (OAM scan)
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(0));
+        gb_tick_ms(&gb, DOTS_TO_MS(0));
         assert(gb.dots == 0);
         assert((gb.memory[rSTAT] & 3) == 2);
     }
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(79));
+        gb_tick_ms(&gb, DOTS_TO_MS(79));
         assert(gb.dots == 79);
         assert((gb.memory[rSTAT] & 3) == 2);
     }
@@ -2106,13 +2106,13 @@ void test_lcd_status_register(void)
     // Mode 3 (Transfer to LCD)
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(80));
+        gb_tick_ms(&gb, DOTS_TO_MS(80));
         assert(gb.dots == 80);
         assert((gb.memory[rSTAT] & 3) == 3);
     }
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(251));
+        gb_tick_ms(&gb, DOTS_TO_MS(251));
         assert(gb.dots == 251);
         assert((gb.memory[rSTAT] & 3) == 3);
     }
@@ -2120,13 +2120,13 @@ void test_lcd_status_register(void)
     // Mode 0 (HBlank)
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(252));
+        gb_tick_ms(&gb, DOTS_TO_MS(252));
         assert(gb.dots == 252);
         assert((gb.memory[rSTAT] & 3) == 0);
     }
     {
         GameBoy gb = {0};
-        gb_tick(&gb, DOTS_TO_MS(DOTS_PER_SCANLINE - 1));
+        gb_tick_ms(&gb, DOTS_TO_MS(DOTS_PER_SCANLINE - 1));
         assert(gb.dots == DOTS_PER_SCANLINE - 1);
         assert((gb.memory[rSTAT] & 3) == 0);
     }
@@ -2135,7 +2135,7 @@ void test_lcd_status_register(void)
     {
         GameBoy gb = {0};
         gb.memory[rLCDC] = LCDCF_ON;
-        gb_tick(&gb, DOTS_TO_MS(144*DOTS_PER_SCANLINE));
+        gb_tick_ms(&gb, DOTS_TO_MS(144*DOTS_PER_SCANLINE));
         assert(gb.dots == 144*DOTS_PER_SCANLINE);
         assert((gb.memory[rSTAT] & 3) == 1);
     }
@@ -2145,7 +2145,7 @@ void test_lcd_status_register(void)
 
 int main(void)
 {
-    test_fetch_inst();
+    test_fetch();
     test_cpu_instructions();
     test_cpu_timing();
 

@@ -337,10 +337,10 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         gb_get_flag(gb, Flag_C) ? 'C' : '-');
     render_debug_text(renderer, text, row++, col + 12);
 
-    sprintf(text, "BC = %02X %02X", gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C));
+    sprintf(text, "BC = %02X %02X", gb_get_reg8(gb, REG_B), gb_get_reg8(gb, REG_C));
     render_debug_text(renderer, text, row++, col);
 
-    sprintf(text, "DE = %02X %02X", gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E));
+    sprintf(text, "DE = %02X %02X", gb_get_reg8(gb, REG_D), gb_get_reg8(gb, REG_E));
     render_debug_text(renderer, text, row++, col);
 
     sprintf(text, "HL = %04X", gb->HL);
@@ -352,7 +352,7 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
 
     row++;
     render_debug_text(renderer, "Next inst", row++, col);
-    Inst inst = gb_fetch_inst(gb);
+    Inst inst = gb_fetch(gb);
     char decoded[32];
     gb_decode(inst, decoded, sizeof(decoded));
     sprintf(text, "%04X: %s", gb->PC, decoded);
@@ -762,26 +762,24 @@ static void sdl_process_events(GameBoy *gb)
     }
 }
 
-void emulator(const char *file_path)
+void emulator(int argc, char **argv)
 {
     GameBoy gb = {0};
-    gb.running = true;
-    gb.printf = printf;
-    gb_load_rom_file(&gb, file_path);
+    gb_init(&gb, argc, argv);
 
-    Uint64 counter_freq = SDL_GetPerformanceFrequency();
+    Uint64 counter_freq  = SDL_GetPerformanceFrequency();
     Uint64 start_counter = SDL_GetPerformanceCounter();
-    Uint64 prev_counter = start_counter;
+    Uint64 prev_counter  = start_counter;
     while (gb.running) {
         Uint64 curr_counter = SDL_GetPerformanceCounter();
-        Uint64 delta_counter = curr_counter - prev_counter;
+        Uint64 dt_counter = curr_counter - prev_counter;
         prev_counter = curr_counter;
-        f64 dt_ms = (f64)(1000.0 * delta_counter) / counter_freq;
+        f64 dt_ms = (f64)(1000.0 * dt_counter) / counter_freq;
         frame_ms += dt_ms;
 
         sdl_process_events(&gb);
 
-        gb_tick(&gb, dt_ms);
+        gb_update(&gb);
 
         sdl_render(&gb, renderer);
     }
@@ -802,7 +800,7 @@ int main(int argc, char **argv)
     }
 
     if (cstr_ends_with(argv[1], ".gb")) {
-        emulator(argv[1]);
+        emulator(argc, argv);
     }
 
     return 0;
