@@ -1833,8 +1833,9 @@ void timer_init(Timer *timer)
     timer->curr_ticks = timer->prev_ticks;
 }
 
-void timer_update(Timer *timer)
+void timer_update(GameBoy *gb)
 {
+    Timer *timer = &gb->timer;
     timer->iterations += 1;
 
     u64 ticks = get_ticks();
@@ -1871,7 +1872,7 @@ void gb_init(GameBoy *gb, int argc, char **argv)
 
 void gb_update(GameBoy *gb)
 {
-    timer_update(&gb->timer);
+    timer_update(gb);
     ppu_update(gb);
     cpu_update(gb);
 }
