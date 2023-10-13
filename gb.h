@@ -272,13 +272,15 @@ typedef struct GameBoy {
 
     PPU ppu;
 
+    char serial_buffer[256];
+    u8 serial_idx;
+
     // Timers
     Timer timer;
 
     u64 elapsed_cycles; // 4194304 cycles/s
     u64 elapsed_us;     // Microseconds elapsed since the start
     f64 elapsed_ms;     // Milliseconds elapsed since the start
-    f64 timer_mcycle;   // Timer for counting Mcycles (~1 MHz => 1048576 Hz)
     f64 timer_clock;
     f64 timer_div;   // Ticks at 16384Hz (in ms)
     f64 timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)

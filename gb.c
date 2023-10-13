@@ -89,7 +89,12 @@ void gb_serial_write(GameBoy *gb, u16 addr, u8 value)
     assert(addr == rSB || addr == rSC);
     if (0) {}
     else if (addr == rSB) gb->memory[addr] = value;
-    else if (addr == rSC) gb->memory[addr] = 0xff;
+    else if (addr == rSC) {
+        if (value == 0x81) {
+            gb->serial_buffer[gb->serial_idx++] = gb->memory[rSB];
+        }
+        gb->memory[addr] = 0xff;
+    }
 }
 
 void gb_timer_write(GameBoy *gb, u16 addr, u8 value)
@@ -113,6 +118,16 @@ void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
         addr == rNR50 || addr == rNR51 || addr == rNR52);
 
     gb->memory[addr] = value;
+
+    if (addr == rNR52 && value == 0 && gb->serial_idx > 0) {
+        for (int i = 0; i < gb->serial_idx; i++) {
+            char c = gb->serial_buffer[i];
+            if (c < ' ' || c > '~') c = '.';
+            fprintf(stderr, "%c", c);
+        }
+        fprintf(stderr, "\n");
+        exit(1);
+    }
 }
 
 void gb_ppu_write(GameBoy *gb, u16 addr, u8 value)
@@ -709,14 +724,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
         //}
     }
 
-    if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
-        return false;
-    }
-
-    if (inst.min_cycles == inst.max_cycles) {
-        gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
-    }
-
     u8 b = inst.data[0];
     // 1-byte instructions
     if (inst.size == 1) {
@@ -954,7 +961,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
             gb->PC += inst.size;
         } else if (b == 0xF3 || b == 0xFB) {
             gb_log_inst(b == 0xF3 ? "DI" : "EI");
-            //fprintf(stderr, "%04X: %s\n", gb->PC, b == 0xF3 ? "DI" : "EI");
             gb->IME = b == 0xF3 ? 0 : 1;
             if (gb->IME) gb->ime_cycles = 1;
             gb->PC += inst.size;
@@ -965,14 +971,10 @@ bool gb_exec(GameBoy *gb, Inst inst)
             u16 addr = (high << 8) | low;
             gb_log_inst("RET %s", gb_flag_to_str(f));
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb->SP += 2;
-                    gb->PC = addr;
-                }
+                gb->SP += 2;
+                gb->PC = addr;
             } else {
                 gb->PC += inst.size;
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC9) {
             u8 low = gb_mem_read(gb, gb->SP + 0);
@@ -1053,9 +1055,8 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("JR %d", r8);
             }
             if (r8 == -2 && !infinite_loop) {
-                fprintf(stderr, "Detected infinite loop...\n");
-                fprintf(stderr, "SCX: %d, SCY: %d\n", gb->memory[rSCX], gb->memory[rSCY]);
-                infinite_loop = true;
+                //fprintf(stderr, "Detected infinite loop...\n");
+                //infinite_loop = true;
             }
             gb->PC = (gb->PC + inst.size) + r8;
         } else if ( // LD reg,d8
@@ -1073,18 +1074,14 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
             }
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-                    if (offset == -2 && !infinite_loop) {
-                        infinite_loop = true;
-                        printf("Detected infinite loop...\n");
-                    }
-                    gb->PC = (gb->PC + inst.size) + offset;
+                int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
+                if (offset == -2 && !infinite_loop) {
+                    //infinite_loop = true;
+                    //printf("Detected infinite loop...\n");
                 }
+                gb->PC = (gb->PC + inst.size) + offset;
             } else {
                 gb->PC += inst.size;
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0x20) {
             gb_log_inst("JR NZ,0x%02X", inst.data[1]);
@@ -1284,8 +1281,8 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("JP 0x%04X", n);
             }
             if (n == gb->PC && !infinite_loop) {
-                printf("Detected infinite loop...\n");
-                infinite_loop = true;
+                //printf("Detected infinite loop...\n");
+                //infinite_loop = true;
             }
             gb->PC = n;
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
@@ -1302,28 +1299,20 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb->PC = n;
-                }
+                gb->PC = n;
             } else {
                 gb->PC += inst.size;
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("CALL %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb->SP -= 2;
-                    u16 ret_addr = gb->PC + inst.size;
-                    gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
-                    gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
-                    gb->PC = n;
-                }
+                gb->SP -= 2;
+                u16 ret_addr = gb->PC + inst.size;
+                gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
+                gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
+                gb->PC = n;
             } else {
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
                 gb->PC += inst.size;
             }
         } else if (b == 0xCD) {
@@ -1607,28 +1596,35 @@ void gb_load_rom(GameBoy *gb, u8 *raw, size_t size)
 {
     assert(size > 0x14F);
     ROM_Header *header = (ROM_Header*)(raw + 0x100);
-    printf("  ROM Size:          $%lx (%ld KiB, %ld bytes)\n", size, size / 1024, size);
-    printf("  ROM Banks:         #%zu\n", size / 0x4000);
-    if (strlen(header->title)) {
-        printf("  Title:             %s\n", header->title);
-    } else {
-        printf("  Title:");
-        for (int i = 0; i < 16; i++) printf(" %02X", header->title[i]);
+    bool log_rom_info = false;
+    if (log_rom_info) {
+        printf("  ROM Size:          $%lx (%ld KiB, %ld bytes)\n", size, size / 1024, size);
+        printf("  ROM Banks:         #%zu\n", size / 0x4000);
+        if (strlen(header->title)) {
+            printf("  Title:             %s\n", header->title);
+        } else {
+            printf("  Title:");
+            for (int i = 0; i < 16; i++) printf(" %02X", header->title[i]);
+            printf("\n");
+        }
+        printf("  CGB:               $%02X\n", (u8)header->title[15]);
+        printf("  New licensee code: $%02X $%02X\n", header->new_licensee[0], header->new_licensee[1]);
+        printf("  SGB:               $%02X\n", header->sgb);
+        printf("  Cartridge Type:    $%02X\n", header->cart_type);
+        printf("  ROM size:          $%02X %d KiB\n", header->rom_size, 32*(1 << header->rom_size));
+        printf("  Destination code:  $%02X\n", header->dest_code);
+        printf("  Old licensee code: $%02X\n", header->old_licensee);
+        printf("  Mask ROM version number: $%02X\n", header->mask_version);
+        printf("  Header checksum:   $%02X\n", header->header_check);
+        printf("  Global checksum:   $%02X $%02X\n", header->global_check[0], header->global_check[1]);
         printf("\n");
     }
+
     if (memcmp(header->logo, NINTENDO_LOGO, sizeof(NINTENDO_LOGO)) != 0) {
         fprintf(stderr, "Nintendo Logo does NOT match\n");
         exit(1);
     }
-    printf("  CGB:               $%02X\n", (u8)header->title[15]);
-    printf("  New licensee code: $%02X $%02X\n", header->new_licensee[0], header->new_licensee[1]);
-    printf("  SGB:               $%02X\n", header->sgb);
-    printf("  Cartridge Type:    $%02X\n", header->cart_type);
-    printf("  ROM size:          $%02X %d KiB\n", header->rom_size, 32*(1 << header->rom_size));
-    printf("  Destination code:  $%02X\n", header->dest_code);
-    printf("  Old licensee code: $%02X\n", header->old_licensee);
-    printf("  Mask ROM version number: $%02X\n", header->mask_version);
-    printf("  Header checksum:   $%02X\n", header->header_check);
+
     u8 checksum = 0;
     for (u16 addr = 0x0134; addr <= 0x014C; addr++) {
         checksum = checksum - raw[addr] - 1;
@@ -1638,12 +1634,9 @@ void gb_load_rom(GameBoy *gb, u8 *raw, size_t size)
         exit(1);
     }
 
-    printf("  Global checksum:   $%02X $%02X\n", header->global_check[0], header->global_check[1]);
-    printf("\n");
     //assert(header->cart_type == 0);
 
     gb->cart_type = header->cart_type;
-    printf("Executing...\n");
 
     // TODO: Handle MBC1
     gb->rom = malloc(size);
@@ -1657,7 +1650,9 @@ void gb_load_rom(GameBoy *gb, u8 *raw, size_t size)
     } else if (gb->cart_type == 1 || gb->cart_type == 3 || gb->cart_type == 0x13) {
         memcpy(gb->rom, raw, size);
         gb->rom_bank_count = size / (16*1024);
-        printf("Size: %ld, ROM Bank Count: %d\n", size, gb->rom_bank_count);
+        if (log_rom_info) {
+            printf("Size: %ld, ROM Bank Count: %d\n", size, gb->rom_bank_count);
+        }
 
         memcpy(gb->memory, raw, 32*1024); // Copy only the first 2 banks
     } else {
@@ -1676,7 +1671,7 @@ void gb_load_rom(GameBoy *gb, u8 *raw, size_t size)
     gb->PC = 0x0100;
     gb->SP = 0xFFFE;
 
-    //gb->memory[rLY] = 0x90;
+    gb->memory[rLY] = 0x90;
     //gb->memory[rP1] = 0x00;
     gb->memory[rLCDC] = 0x91;
     gb->memory[rSTAT] = 0x85;
@@ -1687,7 +1682,7 @@ void gb_load_rom(GameBoy *gb, u8 *raw, size_t size)
 
 void gb_load_rom_file(GameBoy *gb, const char *path)
 {
-    printf("Loading ROM \"%s\"...\n", path);
+    //printf("Loading ROM \"%s\"...\n", path);
     size_t size;
     u8 *raw = read_entire_file(path, &size);
     gb_load_rom(gb, raw, size);
@@ -1730,8 +1725,6 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
     gb->timer_div  -= dt_ms;
     gb->timer_tima -= dt_ms;
     gb->timer_ly   += dt_ms;
-
-    gb->timer_mcycle += dt_ms;
 
     gb_update_ppu_status(gb, dt_ms);
 
@@ -1873,7 +1866,7 @@ void gb_init(GameBoy *gb, int argc, char **argv)
 void gb_update(GameBoy *gb)
 {
     timer_update(gb);
-    ppu_update(gb);
+    //ppu_update(gb);
     cpu_update(gb);
 }
 
@@ -1975,6 +1968,7 @@ u16 gb_get_reg16(const GameBoy *gb, Reg16 r16)
 ///////////////////////////////////////////////////////////////////////////////
 u8 gb_mem_read(const GameBoy *gb, u16 addr)
 {
+    //if (addr == 0xFF44) return 0x90;
     return gb->memory[addr];
 }
 
@@ -2202,6 +2196,23 @@ const char* gb_flag_to_str(Flag f)
 
 void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
 {
+// A:00 F:11 B:22 C:33 D:44 E:55 H:66 L:77 SP:8888 PC:9999 PCMEM:AA,BB,CC,DD
+#if 0
+    // gameboy-doctor
+    printf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X "
+        "SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
+        gb->A, gb->F, gb->B, gb->C, gb->D, gb->E, gb->H, gb->L, gb->SP, gb->PC,
+        gb->memory[gb->PC+0], gb->memory[gb->PC+1], gb->memory[gb->PC+2], gb->memory[gb->PC+3]);
+#endif
+
+#if 0
+    // Gameboy-logs
+    printf("A: %02X F: %02X B: %02X C: %02X D: %02X E: %02X H: %02X L: %02X "
+        "SP: %04X PC: 00:%04X (%02X %02X %02X %02X)\n",
+        gb->A, gb->F, gb->B, gb->C, gb->D, gb->E, gb->H, gb->L, gb->SP, gb->PC,
+        gb->memory[gb->PC+0], gb->memory[gb->PC+1], gb->memory[gb->PC+2], gb->memory[gb->PC+3]);
+#endif
+
     return;
     if (gb->printf == NULL) return;
 

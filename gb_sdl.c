@@ -234,7 +234,8 @@ static void render_debug_text(SDL_Renderer *renderer, const char *text, int row,
     int tile_dim = 24;
     for (size_t i = 0; i < strlen(text); i++) {
         char c = text[i];
-        assert(c >= ' ' && c <= '~');
+        //assert(c >= ' ' && c <= '~');
+        if (c < ' ' || c > '~') c = '.';
         int index = c - ' ';
         int offset = index*16;
         u8 *tile = tiles + offset;
@@ -323,6 +324,13 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     sprintf(text, "WX  =%02X", gb->memory[rWX]);
     render_debug_text(renderer, text, row++, col);
     sprintf(text, "WY  =%02X", gb->memory[rWY]);
+    render_debug_text(renderer, text, row++, col);
+    row += 1;
+    sprintf(text, "Serial Index = %d", gb->serial_idx);
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "Serial Data  =");
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "%s", gb->serial_buffer);
     render_debug_text(renderer, text, row++, col);
 
     row = 2;

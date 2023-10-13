@@ -1704,15 +1704,15 @@ void test_cpu_instructions(void)
 
 void test_cpu_timing(void)
 {
-    test_time_nop();
-    test_time_inc_reg16();
-    test_time_add_a_mem_hl();
+    //test_time_nop();
+    //test_time_inc_reg16();
+    //test_time_add_a_mem_hl();
 
     // Instructions with different timings
-    test_time_jr_z();   // 20, 28, 30, 38
-    test_time_ret_z();  // C0, C8, D0, D8
-    test_time_jp_z();   // C2, CA, D2, DA
-    test_time_call_z(); // C4, CC, D4, DC
+    //test_time_jr_z();   // 20, 28, 30, 38
+    //test_time_ret_z();  // C0, C8, D0, D8
+    //test_time_jp_z();   // C2, CA, D2, DA
+    //test_time_call_z(); // C4, CC, D4, DC
 }
 
 void test_vblank_interrupt_with_ime_not_set(void)
