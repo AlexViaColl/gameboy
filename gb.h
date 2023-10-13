@@ -18,7 +18,6 @@ typedef double f64;
 
 typedef u32 Color;
 extern const Color PALETTE[4];
-
 #define BIT_CLR(x, index) (x) &= ~(1 << (index))
 #define BIT_SET(x, index) (x) |=  (1 << (index))
 #define BIT_ASSIGN(x, index, value) do {                  \
@@ -286,8 +285,6 @@ typedef struct GameBoy {
     f64 timer_tima;  // Ticks at 4096/262144/65536/16384 Hz (depending on TAC)
     f64 timer_ly;    // Ticks at ~9180 Hz (every 0.1089 ms)
 
-    u64 dots;      // 0-70223
-
     int (*printf)(const char *fmt, ...);
 
     u64 inst_executed;
@@ -334,7 +331,8 @@ typedef enum Flag {
 } Flag;
 
 // GameBoy
-void gb_init(GameBoy *gb, int argc, char **argv);
+void gb_init_with_args(GameBoy *gb, int argc, char **argv);
+void gb_init(GameBoy *gb);
 void gb_update(GameBoy *gb);
 bool gb_exec(GameBoy *gb, Inst inst);
 
@@ -372,6 +370,10 @@ void gb_load_rom_file(GameBoy *gb, const char *path);
 void gb_load_rom(GameBoy *gb, u8 *raw, size_t size);
 
 // APU
+
+// Timer
+void timer_init(Timer *timer);
+void timer_update(Timer *timer);
 
 // Utils/Debug
 void gb_dump(const GameBoy *gb);

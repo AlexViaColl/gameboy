@@ -612,19 +612,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
 
-#if 0
-    if (inst.size == 1 && inst.data[0] == 0x40) {
-        u8 test_result = gb->memory[_RAM];
-        if (test_result == 0xff) {
-            printf("Test success\n");
-            exit(0);
-        } else if (test_result == 0) {
-            fprintf(stderr, "Test failure (%d)\n", test_result);
-            exit(1);
-        }
-    }
-#endif
-
     if (gb->boot_mode && gb->PC == 0x100) {
         memcpy(gb->memory, gb->rom, 0x100);
         gb->boot_mode = false;
@@ -708,20 +695,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
             }
             return true;
         }
-
-        //if (gb->ime_cycles == 1) {
-        //    gb->ime_cycles -= 1;
-        //} else if (gb->ime_cycles == 0 && gb->memory[rLY] == 0) {
-        //    // Handle interrupt
-        //    gb->SP -= 2;
-        //    u16 ret_addr = gb->PC;
-        //    gb_mem_write(gb, gb->SP+0, ret_addr & 0xff);
-        //    gb_mem_write(gb, gb->SP+1, ret_addr >> 8);
-        //    gb->PC = 0x0040; // VBlank
-
-        //    gb->IME = 0;
-        //    return;
-        //}
     }
 
     u8 b = inst.data[0];
@@ -1186,8 +1159,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
             gb->PC += inst.size;
         } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
-            // CB 08 => RRC B (B = 01, F = 00)
-            // B = 80, F = 10
             Reg8 reg = inst.data[1] & 0x7;
             gb_log_inst("RRC %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
@@ -1689,35 +1660,6 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
     free(raw);
 }
 
-// Advance by 1 cycle (4.194304 MHz)
-void gb_tick_clock(GameBoy *gb)
-{
-    gb->elapsed_cycles += 1;
-}
-
-void gb_tick_us(GameBoy *gb, u64 dt_us)
-{
-    gb_tick_ms(gb, dt_us*0.001);
-}
-
-static void gb_update_ppu_status(GameBoy *gb, f64 dt_ms)
-{
-    gb->dots = (gb->dots + MS_TO_DOTS(dt_ms)) % DOTS_PER_FRAME;
-    u64 scanline_dots = (gb->dots % DOTS_PER_SCANLINE);
-    //u8 ly = gb->memory[rLY];
-    int ly = gb->dots / DOTS_PER_SCANLINE;
-    //int ly = gb->ppu.scanline;
-    if (ly > 143) {
-        gb->memory[rSTAT] |= 0x1;   // Mode 1 (VBlank)
-    } else if (scanline_dots < 80) {
-        gb->memory[rSTAT] |= 0x2;   // Mode 2 (OAM scan)
-    } else if (scanline_dots < (80+172)) {
-        gb->memory[rSTAT] |= 0x3;   // Mode 3 (LCD transfer)
-    } else {
-        gb->memory[rSTAT] &= ~0x3;  // Mode 0 (HBlank)
-    }
-}
-
 void gb_tick_ms(GameBoy *gb, f64 dt_ms)
 {
     if (gb->paused) return;
@@ -1726,16 +1668,11 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
     gb->timer_tima -= dt_ms;
     gb->timer_ly   += dt_ms;
 
-    gb_update_ppu_status(gb, dt_ms);
-
     for (int i = 0; i < 50; i++) {
         Inst inst = gb_fetch(gb);
         if (!gb_exec(gb, inst)) break;
     }
 
-    // VSync ~60Hz => 60*153 ~9180 times/s (run every 0.1089 ms)
-#if 1
-    //if (gb->ppu.mode == 1) {
     if (gb->timer_ly > 0.1089) {
         gb->timer_ly -= 0.1089;
         if (gb->memory[rLY] == gb->memory[rLYC]) {
@@ -1762,10 +1699,6 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
             // VBlank
         }
     }
-#endif
-
-    // Copy tiles to display
-    //gb_render(gb);
 
     assert(gb->memory[rLY] <= 153);
     gb_render_row(gb, gb->memory[rLY]); // LY 0-153
@@ -1790,16 +1723,13 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
     // Timer Enabled in TAC
     if (gb->memory[rTAC] & 0x04) {
         // Update TIMA (timer counter)
-        int freq = gb_clock_freq(gb->memory[rTAC] & 3);
+        int freq = gb_clock_freq(gb->memory[rTAC]);
         if (gb->timer_tima <= 0) {
             gb->memory[rTIMA] += 1;
             gb->timer_tima += 1000.0 / freq;
-            //fprintf(stderr, "Increasing TIMA %02X -> %02X\n", (u8)(gb->memory[rTIMA] - 1), gb->memory[rTIMA]);
             if (gb->memory[rTIMA] == 0) {
-                //fprintf(stderr, "Reseting TIMA to %02X (TMA)\n", gb->memory[rTMA]);
                 gb->memory[rTIMA] = gb->memory[rTMA];
-                // Trigger interrupt
-                gb->memory[rIF] |= 0x04;
+                gb->memory[rIF] |= 0x04; // Trigger interrupt
             }
         }
     }
@@ -1826,9 +1756,8 @@ void timer_init(Timer *timer)
     timer->curr_ticks = timer->prev_ticks;
 }
 
-void timer_update(GameBoy *gb)
+void timer_update(Timer *timer)
 {
-    Timer *timer = &gb->timer;
     timer->iterations += 1;
 
     u64 ticks = get_ticks();
@@ -1842,7 +1771,7 @@ void timer_update(GameBoy *gb)
 ///////////////////////////////////////////////////////////////////////////////
 //                          GameBoy                                          //
 ///////////////////////////////////////////////////////////////////////////////
-void gb_init(GameBoy *gb, int argc, char **argv)
+void gb_init_with_args(GameBoy *gb, int argc, char **argv)
 {
     // Command line options:
     // - Start in step-debug mode
@@ -1859,14 +1788,19 @@ void gb_init(GameBoy *gb, int argc, char **argv)
 
     gb_load_rom_file(gb, argv[argc - 1]);
 
+    gb_init(gb);
+}
+
+void gb_init(GameBoy *gb)
+{
     timer_init(&gb->timer);
     ppu_init(&gb->ppu);
 }
 
 void gb_update(GameBoy *gb)
 {
-    timer_update(gb);
-    //ppu_update(gb);
+    timer_update(&gb->timer);
+    ppu_update(gb);
     cpu_update(gb);
 }
 
@@ -2142,6 +2076,8 @@ void ppu_update(GameBoy *gb)
 
     // Update I/O registers
     //gb->memory[rLY] = ppu->scanline;
+    gb->memory[rSTAT] &= ~0x3;
+    gb->memory[rSTAT] |= gb->ppu.mode;
 }
 
 

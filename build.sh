@@ -7,6 +7,7 @@ CFLAGS="-Wall -Wextra -Werror -pedantic -ggdb `pkg-config --cflags sdl2` -Wno-un
 LIBS="`pkg-config --libs sdl2`"
 
 clang $CFLAGS -O3 -o gb $LIBS gb_sdl.c gb.c
+clang $CFLAGS -O3 -o gb_headless $LIBS gb_headless.c gb.c
 clang $CFLAGS -o test gb_test.c gb.c
 
 if ! command -v rgbasm &> /dev/null

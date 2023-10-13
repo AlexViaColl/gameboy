@@ -575,9 +575,6 @@ static void sdl_init(void)
         fprintf(stderr, "Failed to open audio device\n");
         exit(1);
     }
-
-    printf("AudioSpec:\n  freq: %d\n  format: %d\n  channels: %d\n  samples: %d\n  size: %d\n",
-        audio_spec.freq, audio_spec.format, audio_spec.channels, audio_spec.samples, audio_spec.size);
 }
 
 static void play_square_wave(int freq, int ms, int duty_cycle)
@@ -773,7 +770,7 @@ static void sdl_process_events(GameBoy *gb)
 void emulator(int argc, char **argv)
 {
     GameBoy gb = {0};
-    gb_init(&gb, argc, argv);
+    gb_init_with_args(&gb, argc, argv);
 
     Uint64 counter_freq  = SDL_GetPerformanceFrequency();
     Uint64 start_counter = SDL_GetPerformanceCounter();
