@@ -334,7 +334,7 @@ typedef enum Flag {
 void gb_init_with_args(GameBoy *gb, int argc, char **argv);
 void gb_init(GameBoy *gb);
 void gb_update(GameBoy *gb);
-bool gb_exec(GameBoy *gb, Inst inst);
+int gb_exec(GameBoy *gb, Inst inst);
 
 // CPU
 void cpu_update(GameBoy *gb);

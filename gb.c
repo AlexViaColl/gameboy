@@ -32,6 +32,12 @@ BACKLOG:
 const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
 //const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
 
+static int gb_clock_freq(int clock)
+{
+    int freq[] = {4096, 262144, 65536, 16384};
+    return freq[clock & 3];
+}
+
 void gb_joypad_write(GameBoy *gb, u16 addr, u8 value)
 {
     assert(addr == rP1);
@@ -104,7 +110,13 @@ void gb_timer_write(GameBoy *gb, u16 addr, u8 value)
     else if (addr == rDIV)  gb->memory[addr] = 0;
     else if (addr == rTIMA) gb->memory[addr] = value;
     else if (addr == rTMA)  gb->memory[addr] = value;
-    else if (addr == rTAC)  gb->memory[addr] = value;
+    else if (addr == rTAC) {
+        if (value & 0x04) {
+            int freq = gb_clock_freq(value);
+            gb->timer_tima = (1000.0 / freq);
+        }
+        gb->memory[addr] = value;
+    }
 }
 
 void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
@@ -126,7 +138,14 @@ void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
             fprintf(stderr, "%c", c);
         }
         fprintf(stderr, "\n");
-        exit(1);
+
+        size_t len = strlen("Passed\n");
+        const char *passed_part = gb->serial_buffer + gb->serial_idx - len;
+        if (gb->serial_idx > len && strncmp(passed_part, "Passed\n", len) == 0) {
+            exit(0);
+        } else {
+            exit(1);
+        }
     }
 }
 
@@ -152,12 +171,6 @@ void gb_ppu_write(GameBoy *gb, u16 addr, u8 value)
     } else if (addr == rWY || addr == rWX) {
         gb->memory[addr] = value;
     }
-}
-
-static int gb_clock_freq(int clock)
-{
-    int freq[] = {4096, 262144, 65536, 16384};
-    return freq[clock & 3];
 }
 
 void gb_io_write(GameBoy *gb, u16 addr, u8 value)
@@ -608,7 +621,7 @@ bool gb_button_down(GameBoy *gb)
         gb->dpad_up || gb->dpad_down || gb->dpad_left || gb->dpad_right;
 }
 
-bool gb_exec(GameBoy *gb, Inst inst)
+int gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
 
@@ -622,14 +635,14 @@ bool gb_exec(GameBoy *gb, Inst inst)
             gb->stopped = false;
             gb->PC += 2;
             gb_timer_write(gb, rDIV, 0);
-            return true;
+            return 0;
         }
     }
 
     u8 IE = gb->memory[rIE];
     u8 IF = gb->memory[rIF];
     if (gb->halted) {
-        if ((IF & IE) == 0) return false;
+        if ((IF & IE) == 0) return -1;
         gb->halted = false;
     }
 
@@ -646,7 +659,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x01;
             }
-            return true;
+            return 0;
         }
 
         // STAT Interrupt
@@ -661,7 +674,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x02;
             }
-            return true;
+            return 0;
         }
 
         // Timer Interrupt
@@ -678,7 +691,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x04;
             }
-            return true;
+            return 0;
         }
 
         // Joypad Interrupt
@@ -693,9 +706,11 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->IME = 0;
                 gb->memory[rIF] &= ~0x1F;
             }
-            return true;
+            return 0;
         }
     }
+
+    int cycles = inst.max_cycles;
 
     u8 b = inst.data[0];
     // 1-byte instructions
@@ -847,7 +862,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb_log_inst("HALT");
                 gb->halted = true;
                 gb->PC += inst.size;
-                return true;
+                return 0;
             }
             Reg8 src = b & 0x7;
             Reg8 dst = (b >> 3) & 0x7;
@@ -948,6 +963,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = addr;
             } else {
                 gb->PC += inst.size;
+                cycles = inst.min_cycles; // 8
             }
         } else if (b == 0xC9) {
             u8 low = gb_mem_read(gb, gb->SP + 0);
@@ -1055,14 +1071,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = (gb->PC + inst.size) + offset;
             } else {
                 gb->PC += inst.size;
-            }
-        } else if (b == 0x20) {
-            gb_log_inst("JR NZ,0x%02X", inst.data[1]);
-            if (!gb_get_flag(gb, Flag_Z)) {
-                int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-                gb->PC = (gb->PC + inst.size) + offset;
-            } else {
-                gb->PC += inst.size;
+                cycles = inst.min_cycles; // 8
             }
         } else if (b == 0xE0) {
             gb_log_inst("LDH (FF00+%02X),A", inst.data[1]);
@@ -1273,6 +1282,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = n;
             } else {
                 gb->PC += inst.size;
+                cycles = inst.min_cycles; // 12
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
             Flag f = (b >> 3) & 0x3;
@@ -1285,6 +1295,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = n;
             } else {
                 gb->PC += inst.size;
+                cycles = inst.min_cycles; // 12
             }
         } else if (b == 0xCD) {
             gb_log_inst("CALL 0x%04X", n);
@@ -1309,7 +1320,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
     assert(gb->PC <= 0xFFFF);
     gb->inst_executed += 1;
 
-    return true;
+    return cycles;
 }
 
 static size_t gb_tile_coord_to_pixel(int row, int col)
@@ -1665,74 +1676,56 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
     if (gb->paused) return;
     gb->elapsed_ms += dt_ms;
     gb->timer_div  -= dt_ms;
-    gb->timer_tima -= dt_ms;
-    gb->timer_ly   += dt_ms;
 
-    for (int i = 0; i < 50; i++) {
-        Inst inst = gb_fetch(gb);
-        if (!gb_exec(gb, inst)) break;
+    while (gb->timer_div <= 0) {
+        gb->timer_div += (1000.0 / 16384.0);
+        gb->memory[rDIV] += 1;
     }
 
-    if (gb->timer_ly > 0.1089) {
-        gb->timer_ly -= 0.1089;
-        if (gb->memory[rLY] == gb->memory[rLYC]) {
-            gb->memory[rSTAT] |= 0x04;
-            if (gb->memory[rIE] & 0x02) {
-                gb->memory[rIF] |= 0x02;
+    if (gb->memory[rTAC] & 0x04) {
+        gb->timer_tima -= dt_ms;
+        int freq = gb_clock_freq(gb->memory[rTAC]);
+        while (gb->timer_tima <= 0) {
+            gb->timer_tima += (1000.0 / freq);
+            gb->memory[rTIMA] += 1;
+            if (gb->memory[rTIMA] == 0) {
+                gb->memory[rTIMA] = gb->memory[rTMA];
+                gb->memory[rIF] |= 0x04;
             }
-        } else {
-            gb->memory[rSTAT] &= ~0x04;
+        }
+    }
+
+    static f64 dt = 0.0;
+    dt += dt_ms;
+
+    int n = 0;
+    while (dt > 0) {
+        Inst inst = gb_fetch(gb);
+        if (((1000.0 / CPU_FREQ) * inst.max_cycles) > dt) {
+            break;
         }
 
-        if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
-            gb->memory[rLY] = 0;
-            gb->memory[rSTAT] &= 0xF8; // Clear low 3-bits
-        } else {
-            gb->memory[rLY] += 1;
-        }
+        int cycles = gb_exec(gb, inst);
+        if (cycles < 0) break;
+        if (n > 1000) break;
 
-        if (gb->memory[rLY] > 153) {
-            gb->memory[rIF] |= 0x01;
-            // Run this line 60 times/s (60Hz)
-            gb->memory[rLY] = 0;
-        } else if (gb->memory[rLY] == 144) {
-            // VBlank
-        }
+        dt -= ((1000.0 / CPU_FREQ) * cycles);
+        n += 1;
     }
 
     assert(gb->memory[rLY] <= 153);
-    gb_render_row(gb, gb->memory[rLY]); // LY 0-153
-    if (gb->memory[rLY] == 144) {
-        for (int row = 154; row < 256; row++) {
-            gb_render_row(gb, row);
-        }
+    //gb_render_row(gb, gb->memory[rLY]); // LY 0-153
+    //if (gb->memory[rLY] == 144) {
+    //    for (int row = 154; row < 256; row++) {
+    //        gb_render_row(gb, row);
+    //    }
 
-        gb_render_sprites(gb);
-    } else if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
-        for (int row = 0; row < 256; row++) {
-            gb_render_row(gb, row);
-        }
-    }
-
-    // Increase rDIV at a rate of 16384Hz (every 0.06103515625 ms)
-    while (gb->timer_div < 0) {
-        gb->memory[rDIV] += 1;
-        gb->timer_div += 1000.0 / 16384;
-    }
-
-    // Timer Enabled in TAC
-    if (gb->memory[rTAC] & 0x04) {
-        // Update TIMA (timer counter)
-        int freq = gb_clock_freq(gb->memory[rTAC]);
-        if (gb->timer_tima <= 0) {
-            gb->memory[rTIMA] += 1;
-            gb->timer_tima += 1000.0 / freq;
-            if (gb->memory[rTIMA] == 0) {
-                gb->memory[rTIMA] = gb->memory[rTMA];
-                gb->memory[rIF] |= 0x04; // Trigger interrupt
-            }
-        }
-    }
+    //    gb_render_sprites(gb);
+    //} else if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
+    //    for (int row = 0; row < 256; row++) {
+    //        gb_render_row(gb, row);
+    //    }
+    //}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1800,7 +1793,7 @@ void gb_init(GameBoy *gb)
 void gb_update(GameBoy *gb)
 {
     timer_update(&gb->timer);
-    ppu_update(gb);
+    //ppu_update(gb);
     cpu_update(gb);
 }
 
@@ -2075,9 +2068,15 @@ void ppu_update(GameBoy *gb)
     }
 
     // Update I/O registers
-    //gb->memory[rLY] = ppu->scanline;
+    gb->memory[rLY] = ppu->scanline;
+
     gb->memory[rSTAT] &= ~0x3;
     gb->memory[rSTAT] |= gb->ppu.mode;
+
+    // Update Interrupt Flags register
+    if (gb->memory[rLY] == gb->memory[rLYC]) {
+        gb->memory[rSTAT] |= 0x04;
+    }
 }
 
 
