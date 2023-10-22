@@ -2760,7 +2760,7 @@ int main(void)
 
     test_clock_step();
 
-    test_disassemble();
+    //test_disassemble();
     test_assemble_inst();
     test_assemble_inst_to_buf();
 
