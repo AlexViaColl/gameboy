@@ -272,8 +272,7 @@ typedef enum Opcode {
 typedef struct Inst {
     u8 data[4];
     u8 size;
-    u8 min_cycles;
-    u8 max_cycles;
+    u8 cycles;
     u8 m;
     Opcode opcode;
 } Inst;
@@ -387,6 +386,7 @@ void gb_set_reg(GameBoy *gb, Reg8 r8, u8 value);
 void gb_set_reg16(GameBoy *gb, Reg16 r16, u16 value);
 
 Inst gb_fetch(const GameBoy *gb);
+Inst gb_fetch_internal(const u8 *data, u8 flags, bool exit_illegal_inst);
 const char *gb_decode(Inst inst, char *buf, size_t size);
 
 void gb_tick_ms(GameBoy *gb, f64 dt_ms);

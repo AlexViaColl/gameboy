@@ -34,9 +34,13 @@ static Inst make_inst_internal(u8 n, u8 b0, u8 b1, u8 b2)
     return inst;
 }
 
-static Inst gb_fetch_internal(const u8 *data, bool exit_illegal_inst)
+Inst gb_fetch_internal(const u8 *data, u8 flags, bool exit_illegal_inst)
 {
     u8 b = data[0];
+    u8 z = (flags >> 7) & 1;
+    u8 c = (flags >> 4) & 1;
+    u8 cc = (b >> 3) & 3; // 0 -> Z=0 | 1 -> Z=1 | 2 -> C=0 | 3 -> C=1
+    bool taken = (cc == 0 && z == 0) || (cc == 1 && z == 1) || (cc == 2 && c == 0) || (cc == 3 && c == 1);
 
     if (b == 0xd3 || b == 0xdb || b == 0xdd || b == 0xe3 || b == 0xe4 ||
         b == 0xeb || b == 0xec || b == 0xed || b == 0xf4 || b == 0xfc || b == 0xfd)
@@ -52,67 +56,67 @@ static Inst gb_fetch_internal(const u8 *data, bool exit_illegal_inst)
 
     // 1-byte instructions
     if (b == 0x00 || b == 0x76 || b == 0xf3 || b == 0xfb) { // NOP, HALT, DI, EI
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 4) { // INC reg8: 00|xxx|100
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 5) { // DEC reg8: 00|xxx|101
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 7) { // RLCA|RRCA|RLA|RRA|DAA|CPL|SCF|CCF: 00|xxx|111
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 3) { // INC reg16|DEC reg16: 00|xxx|011
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 2) { // LD (reg16),A|LD A,(reg16): 00|xxx|010
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
-    } else if (b >= 0x40 && b <= 0x7F) {
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
+    } else if (b >= 0x40 && b <= 0x7f) {
         bool is_ld_r8_hl = (b >> 6) == 1 && (b & 7) == 6;
         bool is_ld_hl_r8 = b >= 0x70 && b <= 0x77;
         bool is_ld_hl = is_ld_r8_hl || is_ld_hl_r8;
         u8 cycles = is_ld_hl ? 8 : 4;
-        return (Inst){.data = {b}, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
-    } else if (b >= 0x80 && b <= 0xBF) {
+        return (Inst){.data = {b}, .size = 1, .cycles = cycles};
+    } else if (b >= 0x80 && b <= 0xbf) {
         bool reads_hl = (b >> 6) == 2 && (b & 7) == 6;
         u8 cycles = reads_hl ? 8 : 4;
-        return (Inst){.data = {b}, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
-    } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 20};
-    } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) { // POP reg16: 11|xx|0001
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 12, .max_cycles = 12};
-    } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) { // PUSH reg16: 11|xx|0101
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b}, .size = 1, .cycles = cycles};
+    } else if (b == 0xc0 || b == 0xc8 || b == 0xd0 || b == 0xd8) { // RET NZ|RET Z|RET NC|RET C
+        return (Inst){.data = {b}, .size = 1, .cycles = taken ? 20 : 8};
+    } else if (b == 0xc1 || b == 0xd1 || b == 0xe1 || b == 0xf1) { // POP reg16: 11|xx|0001
+        return (Inst){.data = {b}, .size = 1, .cycles = 12};
+    } else if (b == 0xc5 || b == 0xd5 || b == 0xe5 || b == 0xf5) { // PUSH reg16: 11|xx|0101
+        return (Inst){.data = {b}, .size = 1, .cycles = 16};
     } else if ((b >> 6) == 3 && (b & 7) == 7) { // RST xx: 11|xxx|111
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
-    } else if (b == 0xC9 || b == 0xD9) { // RET|RETI
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
-    } else if (b == 0xE2 || b == 0xF2) { // LD (C),A|LD A,(C)
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
-    } else if (b == 0xE9) { // JP (HL)
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
-    } else if (b == 0xF9) { // LD SP,HL
-        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .cycles = 16};
+    } else if (b == 0xc9 || b == 0xd9) { // RET|RETI
+        return (Inst){.data = {b}, .size = 1, .cycles = 16};
+    } else if (b == 0xe2 || b == 0xf2) { // LD (C),A|LD A,(C)
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
+    } else if (b == 0xe9) { // JP (HL)
+        return (Inst){.data = {b}, .size = 1, .cycles = 4};
+    } else if (b == 0xf9) { // LD SP,HL
+        return (Inst){.data = {b}, .size = 1, .cycles = 8};
     }
 
     // 2-byte instructions
     else if (b == 0x10) { // STOP
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         u8 cycles = b == 0x36 ? 12 : 8;
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = cycles};
     } else if (b == 0x18) { // JR r8
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
-    } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) { // JR NZ|NC|Z|C,r8
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 8, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 12};
+    } else if (b == 0x20 || b == 0x28 || b == 0x30 || b == 0x38) { // JR NZ,r8|JP Z,r8|JP NC,r8|JP C,r8
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = taken ? 12 : 8};
     } else if ((b >> 6) == 3 && (b & 7) == 6) { // ADD|ADC|SUB|SBC|AND|XOR|OR|CP d8: 11|xxx|110
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 8};
     } else if (b == 0xE0 || b == 0xF0) { // LDH (a8),A|LDH A,(a8)
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 12};
     } else if (b == 0xE8) { // ADD SP,r8
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 16};
     } else if (b == 0xF8) { // LD HL,SP+r8
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = 12};
     }
 
     // Prefix CB
@@ -120,24 +124,24 @@ static Inst gb_fetch_internal(const u8 *data, bool exit_illegal_inst)
         u8 b2 = data[1];
         //u8 b2 = gb_mem_read(gb, gb->PC+1);
         u8 cycles = (b2 & 7) == 6 ? 16 : 8;
-        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b, data[1]}, .size = 2, .cycles = cycles};
     }
 
     // 3-byte instructions
     else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) { // LD r16,d16
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = 12};
     } else if (b == 0x08) { // LD (a16),SP
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 20, .max_cycles = 20};
-    } else if (b == 0xC3) { // JP a16
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 16, .max_cycles = 16};
-    } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 24};
-    } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 16};
-    } else if (b == 0xCD) { // CALL a16
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 24, .max_cycles = 24};
-    } else if (b == 0xEA || b == 0xFA) { // LD (a16),A|LD A,(a16)
-        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = 20};
+    } else if (b == 0xc3) { // JP a16
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = 16};
+    } else if (b == 0xc4 || b == 0xcc || b == 0xd4 || b == 0xdc) { // CALL NZ,a16|CALL Z,a16|CALL NC,a16|CALL C,a16
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = taken ? 24 : 12};
+    } else if (b == 0xc2 || b == 0xca || b == 0xd2 || b == 0xda) { // JP NZ,a16|JP Z,a16|JP NC,a16|JP C,a16
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = taken ? 16 : 12};
+    } else if (b == 0xcd) { // CALL a16
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = 24};
+    } else if (b == 0xea || b == 0xfa) { // LD (a16),A|LD A,(a16)
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .cycles = 16};
     }
 
     printf("%02X\n", b);
@@ -146,7 +150,7 @@ static Inst gb_fetch_internal(const u8 *data, bool exit_illegal_inst)
 
 Inst gb_fetch(const GameBoy *gb)
 {
-    return gb_fetch_internal(gb->memory + gb->PC, false);
+    return gb_fetch_internal(gb->memory + gb->PC, gb->F, false);
 }
 
 const char *gb_decode(Inst inst, char *buf, size_t size)
@@ -478,7 +482,7 @@ int gb_exec(GameBoy *gb, Inst inst)
         }
     }
 
-    int cycles = inst.max_cycles;
+    int cycles = inst.cycles;
 
     u8 b = inst.data[0];
     // 1-byte instructions
@@ -731,7 +735,6 @@ int gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = addr;
             } else {
                 gb->PC += inst.size;
-                cycles = inst.min_cycles; // 8
             }
         } else if (b == 0xC9) {
             u8 low = gb_mem_read(gb, gb->SP + 0);
@@ -839,7 +842,6 @@ int gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = (gb->PC + inst.size) + offset;
             } else {
                 gb->PC += inst.size;
-                cycles = inst.min_cycles; // 8
             }
         } else if (b == 0xE0) {
             gb_log_inst("LDH (FF00+%02X),A", inst.data[1]);
@@ -1050,7 +1052,6 @@ int gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = n;
             } else {
                 gb->PC += inst.size;
-                cycles = inst.min_cycles; // 12
             }
         } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
             Flag f = (b >> 3) & 0x3;
@@ -1063,7 +1064,6 @@ int gb_exec(GameBoy *gb, Inst inst)
                 gb->PC = n;
             } else {
                 gb->PC += inst.size;
-                cycles = inst.min_cycles; // 12
             }
         } else if (b == 0xCD) {
             gb_log_inst("CALL 0x%04X", n);
@@ -1476,34 +1476,23 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
 
     int n = 0;
     while (dt > 0) {
-        //if (gb->PC == 0x0050) printf("$0050\n");
         Inst inst = gb_fetch(gb);
-        if (((1000.0 / CPU_FREQ) * inst.max_cycles) > dt) {
+        if (((1000.0 / CPU_FREQ) * inst.cycles) > dt) {
             break;
         }
 
         int cycles = gb_exec(gb, inst);
-        if (cycles < 0) break;
-        if (n > 1000) break;
+        if (cycles <= 0) {
+            break;
+        }
+        if (n > 1000) {
+            break;
+        }
         break;
 
         dt -= ((1000.0 / CPU_FREQ) * cycles);
         n += 1;
     }
-
-    assert(gb->memory[rLY] <= 153);
-    //gb_render_row(gb, gb->memory[rLY]); // LY 0-153
-    //if (gb->memory[rLY] == 144) {
-    //    for (int row = 154; row < 256; row++) {
-    //        gb_render_row(gb, row);
-    //    }
-
-    //    gb_render_sprites(gb);
-    //} else if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
-    //    for (int row = 0; row < 256; row++) {
-    //        gb_render_row(gb, row);
-    //    }
-    //}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1591,7 +1580,7 @@ void gb_clock_step(GameBoy *gb)
             gb->mem_rw_addr = gb->PC;
             gb->mem_rw_value = gb->memory[gb->PC];
             gb->prev_inst = gb_fetch(gb);
-            gb->prev_inst.m = gb->prev_inst.min_cycles / 4;
+            gb->prev_inst.m = gb->prev_inst.cycles / 4;
         }
     }
 }
@@ -1608,6 +1597,8 @@ void gb_update(GameBoy *gb)
     ppu_update(gb);
     cpu_update(gb);
 
+    gb_render(gb);
+#if 0
     gb_render_row(gb, gb->memory[rLY]); // LY 0-153
     if (gb->memory[rLY] == 144) {
         for (int row = 154; row < 256; row++) {
@@ -1620,6 +1611,7 @@ void gb_update(GameBoy *gb)
             gb_render_row(gb, row);
         }
     }
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2461,7 +2453,7 @@ void gb_disassemble(const void *rom, size_t size)
     u16 addr = 0x0000;
     const u8 *pc = (const u8*)rom;
     while (size > 0) {
-        Inst inst = gb_fetch_internal(pc, false);
+        Inst inst = gb_fetch_internal(pc, 0, false);
         printf("%04x: ", addr);
         if (inst.size == 1) printf("%02x           ", inst.data[0]);
         if (inst.size == 2) printf("%02x %02x        ", inst.data[0], inst.data[1]);

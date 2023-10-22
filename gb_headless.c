@@ -199,3 +199,131 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
+static u64 t_cycles;
+static u64 m_cycles;
+
+static u16 fetch_addr;
+static Inst fetch_inst;
+
+void gb_tick_m(GameBoy *gb);
+
+int main2(void)
+{
+    GameBoy gb = {0};
+
+    // Fetch $0000 (00        NOP)
+    gb_tick_m(&gb);
+    assert(m_cycles == 1 && t_cycles == 4);
+    assert(fetch_addr == 0x0001);
+
+    gb_tick_m(&gb);
+    assert(m_cycles == 2 && t_cycles == 8);
+
+    // Execute NOP
+    // Fetch $0001 (00        NOP)
+
+    printf("Pass\n");
+
+    return 0;
+}
+
+void gb_tick_m(GameBoy *gb)
+{
+    t_cycles += 4;
+    m_cycles += 1;
+
+    // Execute
+    if (fetch_inst.size) {
+        // 1 M-cycle
+        // NOP | STOP
+        // INC B | INC C | INC D | INC E | INC H | INC L | INC A
+        // DEC B | DEC C | DEC D | DEC E | DEC H | DEC L | DEC A
+        // RLCA | RRCA | RLA | RRA | DAA | CPL | SCF | CCF
+        // LD B,B | LD B,C | LD B,D | LD B,E | LD B,H | LD B,L | LD B,A
+        // LD C,B | ...                                        | LD C,A
+        // LD D,B | ...                                        | LD D,A
+        // LD E,B | ...                                        | LD E,A
+        // LD H,B | ...                                        | LD H,A
+        // LD L,B | ...                                        | LD L,A
+        // LD A,B | ...                                        | LD A,A
+        // HALT
+        // ADD B | ADD C | ADD D | ADD E | ADD H | ADD L | ADD A
+        // ADC B | ...                                   | ADC A
+        // SUB B | ...                                   | SUB A
+        // SBC B | ...                                   | SBC A
+        // AND B | ...                                   | AND A
+        // XOR B | ...                                   | XOR A
+        // OR  B | ...                                   | OR  A
+        // CP  B | ...                                   | CP  A
+        // JP (HL)
+        // DI | EI
+        if (fetch_inst.cycles == 4) {
+        }
+
+        // 2 M-cycles
+        // JR  cc (not taken)
+        // RET cc (not taken)
+        // LD (BC),A | LD (DE),A | LD (HL+),A | LD (HL-),A
+        // LD A,(BC) | LD A,(DE) | LD A,(HL+) | LD A,(HL-)
+        // INC BC | INC DE | INC HL | INC SP
+        // DEC BC | DEC DE | DEC HL | DEC SP
+        // LD B,d8 | LD C,d8 | LD D,d8 | LD E,d8 | LD H,d8 | LD L,d8 | LD A,d8
+        // ADD HL,BC | ADD HL,DE | ADD HL,HL | ADD HL,SP
+        // LD B,(HL) | LD C,(HL) | LD D,(HL) | LD E,(HL) | LD H,(HL) | LD L,(HL) | LD A,(HL)
+        // ADD (HL) | ADC (HL) | SUB (HL) | SBC (HL) | AND (HL) | XOR (HL) | OR (HL) | CP (HL)
+        // ADD d8 | ADC d8 | SUB d8 | SBC d8 | AND d8 | XOR d8 | OR d8 | CP d8
+        // LD (C),A | LD A,(C)
+        // LD SP,HL
+        // RLC  B | ... | RLC  A | RRC  B | ... | RRC A
+        // RL   B | ... | RL   A | RR   B | ... | RR  A
+        // SLA  B | ... | SLA  A | SRA  B | ... | SRA A
+        // SWAP B | ... | SWAP A | SRL  B | ... | SRL A
+        // BIT 0,B| ... | BIT 0,A| BIT 1,B| ... | BIT 1,A
+        // BIT 2,B| ... | BIT 2,A| BIT 3,B| ... | BIT 3,A
+        // BIT 4,B| ... | BIT 4,A| BIT 5,B| ... | BIT 5,A
+        // BIT 6,B| ... | BIT 6,A| BIT 7,B| ... | BIT 7,A
+        // RES 0,B| ... | RES 0,A| RES 1,B| ... | RES 1,A
+        // RES 2,B| ... | RES 2,A| RES 3,B| ... | RES 3,A
+        // RES 4,B| ... | RES 4,A| RES 5,B| ... | RES 5,A
+        // RES 6,B| ... | RES 6,A| RES 7,B| ... | RES 7,A
+        // SET 0,B| ... | SET 0,A| SET 1,B| ... | SET 1,A
+        // SET 2,B| ... | SET 2,A| SET 3,B| ... | SET 3,A
+        // SET 4,B| ... | SET 4,A| SET 5,B| ... | SET 5,A
+        // SET 6,B| ... | SET 6,A| SET 7,B| ... | SET 7,A
+
+        // 3 M-cycles
+        // JR r8
+        // JR cc (taken)
+        // JP cc,a16 (not taken)
+        // CALL cc,a16 (not taken)
+        // LD BC,d16 | LD DE,d16 | LD HL,d16 | LD SP,d16
+        // INC (HL) | DEC (HL)
+        // LD (HL),d8
+        // POP BC | POP DE | POP HL | POP AF
+        // LDH (a8),A | LDH A,(a8)
+        // LD HL,SP+r8
+
+        // 4 M-cycles
+        // JP a16
+        // JP cc,a16 (taken)
+        // PUSH BC | PUSH DE | PUSH HL | PUSH AF
+        // RST $00 | RST $08 | RST $10 | RST $18 | RST $20 | RST $28 | RST $30 | RST $38
+        // RET | RETI
+        // ADD SP,r8
+        // LD (a16),A | LD A,(a16)
+        // RLC (HL) | RRC (HL) | RL (HL) | RR (HL) | SLA (HL) | SRA (HL) | SWAP (HL) | SRL (HL)
+        // BIT 0,(HL) | ... | BIT 7,(HL) | RES 0,(HL) | ... | RES 7,(HL) | SET 0,(HL) | ... | SET 7,(HL)
+
+        // 5 M-cycles
+        // LD (a16), SP | RET cc (taken)
+
+        // 6 M-cycles
+        // CALL a16
+        // CALL cc,a16 (taken)
+    }
+
+    // Fetch
+    fetch_inst = gb_fetch_internal(gb->memory + fetch_addr, gb->F, false);
+    fetch_addr += fetch_inst.size;
+}
