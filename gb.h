@@ -81,6 +81,7 @@ extern const Color PALETTE[4];
 #define rNR13   0xFF13 // Sound channel 1 period low
 #define rNR14   0xFF14 // Sound channel 1 period high & control
 
+//      rNR20   0xFF15 // Sound channel 2 unused
 #define rNR21   0xFF16 // Sound channel 2 length timer & duty cycle
 #define rNR22   0xFF17 // Sound channel 2 volume & envelope
 #define rNR23   0xFF18 // Sound channel 2 period low
@@ -92,6 +93,7 @@ extern const Color PALETTE[4];
 #define rNR33   0xFF1D // Sound channel 3 period low
 #define rNR34   0xFF1E // Sound channel 3 period high & control
 
+//      rNR40   0xFF1F // Sound channel 4 unused
 #define rNR41   0xFF20 // Sound channel 4 length timer
 #define rNR42   0xFF21 // Sound channel 4 volume & envelope
 #define rNR43   0xFF22 // Sound channel 4 frequency & randomness
@@ -214,6 +216,67 @@ typedef struct ROM_Header {
     u8 global_check[2];// 014E-014F (2)    Not verified
 } ROM_Header;
 
+typedef enum RW_Op {
+    RW_NONE     = 0,
+    RW_R_OPCODE = 1,
+    RW_R_MEM    = 2,
+    RW_W_REG    = 3,
+    RW_W_MEM    = 4,
+} RW_Op;
+
+typedef enum Reg8 {
+    REG_B = 0,
+    REG_C = 1,
+    REG_D = 2,
+    REG_E = 3,
+    REG_H = 4,
+    REG_L = 5,
+    REG_HL_IND = 6,
+    REG_A = 7,
+    REG_COUNT,
+} Reg8;
+
+typedef enum Reg16 {
+    REG_BC = 0,
+    REG_DE = 1,
+    REG_HL = 2,
+    REG_SP = 3,
+    // REG_AF
+} Reg16;
+
+typedef enum Flag {
+    Flag_NZ = 0,
+    Flag_Z  = 1,
+    Flag_NC = 2,
+    Flag_C  = 3,
+    Flag_N  = 4,
+    Flag_H  = 5,
+    //FLAG_COUNT,
+} Flag;
+
+typedef enum Opcode {
+    OP_INVALID = 0,
+    OP_ADC,  OP_ADD,  OP_AND,  OP_BIT,
+    OP_CALL, OP_CCF,  OP_CP,   OP_CPL,
+    OP_DAA,  OP_DEC,  OP_DI,   OP_EI,
+    OP_HALT, OP_INC,  OP_JP,   OP_JR,
+    OP_LD,   OP_LDH,  OP_NOP,  OP_OR,
+    OP_POP,  OP_PUSH, OP_RES,  OP_RET,
+    OP_RETI, OP_RL,   OP_RLA,  OP_RLC,
+    OP_RLCA, OP_RR,   OP_RRA,  OP_RRC,
+    OP_RRCA, OP_RST,  OP_SBC,  OP_SCF,
+    OP_SET,  OP_SLA,  OP_SRA,  OP_SRL,
+    OP_STOP, OP_SUB,  OP_SWAP, OP_XOR,
+} Opcode;
+
+typedef struct Inst {
+    u8 data[4];
+    u8 size;
+    u8 min_cycles;
+    u8 max_cycles;
+    u8 m;
+    Opcode opcode;
+} Inst;
 
 typedef struct GameBoy {
     // CPU freq:        4.194304 MHz    (~4194304 cycles/s)
@@ -277,6 +340,14 @@ typedef struct GameBoy {
     // Timers
     Timer timer;
 
+    u64 clk;            // 4MHz (4194304 cycles/s)
+    u64 phi;            // 1MHz (1048576 cycles/s)
+    RW_Op mem_rw;
+    u64 mem_rw_addr;
+    u8  mem_rw_value;
+
+    Inst prev_inst;
+
     u64 elapsed_cycles; // 4194304 cycles/s
     u64 elapsed_us;     // Microseconds elapsed since the start
     f64 elapsed_ms;     // Milliseconds elapsed since the start
@@ -294,45 +365,11 @@ typedef struct GameBoy {
     bool paused;
 } GameBoy;
 
-typedef struct Inst {
-    const u8 *data;
-    u8 size;
-    u8 min_cycles;
-    u8 max_cycles;
-} Inst;
-
-typedef enum Reg8 {
-    REG_B = 0,
-    REG_C = 1,
-    REG_D = 2,
-    REG_E = 3,
-    REG_H = 4,
-    REG_L = 5,
-    REG_HL_MEM = 6,
-    REG_A = 7,
-    REG_COUNT,
-} Reg8;
-
-typedef enum Reg16 {
-    REG_BC = 0,
-    REG_DE = 1,
-    REG_HL = 2,
-    REG_SP = 3,
-} Reg16;
-
-typedef enum Flag {
-    Flag_NZ = 0,
-    Flag_Z  = 1,
-    Flag_NC = 2,
-    Flag_C  = 3,
-    Flag_N  = 4,
-    Flag_H  = 5,
-    //FLAG_COUNT,
-} Flag;
 
 // GameBoy
 void gb_init_with_args(GameBoy *gb, int argc, char **argv);
 void gb_init(GameBoy *gb);
+void gb_clock_step(GameBoy *gb);
 void gb_update(GameBoy *gb);
 int gb_exec(GameBoy *gb, Inst inst);
 
@@ -377,6 +414,49 @@ void timer_update(Timer *timer);
 
 // Utils/Debug
 void gb_dump(const GameBoy *gb);
+
+// Assembler
+typedef enum Token_Type {
+    TT_INVALID = 0,
+    TT_COMMA,           // ','
+    TT_COLON,           // ':'
+    TT_DOT,             // '.'
+    //TT_DOLLAR,          // '$'
+    //TT_PERCENT,         // '%'
+    TT_MINUS,           // '-'
+    TT_PLUS,            // '+'
+    TT_POPEN,           // '('
+    TT_PCLOSE,          // ')'
+
+    TT_SEMICOLON,       // ';'
+
+    TT_IDENT,           // 'LD', 'NOP', 'A', 'BC', 'HL'
+
+    TT_BIN_LIT,         // '%00001010'
+    TT_DEC_LIT,         // '144'
+    TT_HEX_LIT,         // '$1234'
+
+    TT_COMMENT,         // '; foo'
+    TT_WS               // ' '
+} Token_Type;
+
+typedef struct Token {
+    Token_Type type;
+    const char *start;
+    size_t len;
+} Token;
+
+typedef struct TokenArray {
+    Token tokens[8];
+    size_t count;
+} TokenArray;
+
+void gb_disassemble(const void *rom, size_t size);
+
+TokenArray gb_tokenize(const char *s);
+Inst gb_assemble_inst(const char *s);
+void* gb_assemble_inst_to_buf(void *buf, size_t *size, const char *src);
+void gb_assemble_prog_to_buf(void *buf, size_t size, const char *program);
 
 const char* gb_flag_to_str(Flag f);
 const char* gb_reg8_to_str(Reg8 r8);

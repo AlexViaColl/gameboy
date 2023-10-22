@@ -28,6 +28,8 @@ $ ./gb <path to ROM>
 [GBDK](https://github.com/gbdk-2020/gbdk-2020) \
 [Mooneye Test Suite](https://github.com/Gekkio/mooneye-test-suite) \
 [Game Boy: Complete Technical Reference](https://github.com/Gekkio/gb-ctr)
+[Generation I Pokemon Cry Synthesizer](https://rgmechex.com/tech/gen1cries.html)
+[Mealybug Tearoom Tests](https://github.com/mattcurrie/mealybug-tearoom-tests)
 
 ## License
 [MIT](./LICENSE)

@@ -40,6 +40,7 @@ static SDL_AudioDeviceID device;
 static ViewerType viewer_type = VT_GAME;
 
 static f64 frame_ms;
+static bool show_menu;
 
 static void render_debug_tile(SDL_Renderer *renderer, u8 *tile, int x, int y, int w, int h)
 {
@@ -224,12 +225,6 @@ static void render_debug_text(SDL_Renderer *renderer, const char *text, int row,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     };
     for (size_t i = 0; i < sizeof(tiles); i++) tiles[i] = ~tiles[i];
-    //for (int i = 0; i < 6; i++) {
-    //    for (int j = 0; j < 16; j++) {
-    //        u8 *tile = tiles + i*16*16 + j*16;
-    //        render_debug_tile(renderer, tile, j*tile_dim, i*tile_dim, tile_dim, tile_dim);
-    //    }
-    //}
 
     int tile_dim = 24;
     for (size_t i = 0; i < strlen(text); i++) {
@@ -292,6 +287,8 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
     } else {
         sprintf(text, "TAC =%02X", tac);
     }
+    render_debug_text(renderer, text, row++, col);
+    sprintf(text, "Cyc.=%lu", gb->elapsed_cycles);
     render_debug_text(renderer, text, row++, col);
 
     row++;
@@ -482,6 +479,18 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
 
+    if (show_menu) {
+        SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
+        SDL_RenderClear(renderer);
+
+        int row = 10;
+        int col = 10;
+        render_debug_text(renderer, "Press 'q' to exit", row++, col);
+
+        SDL_RenderPresent(renderer);
+        return;
+    }
+
     if (viewer_type == VT_GAME) {
         if (gb->memory[rLY] != 144 && (gb->memory[rLCDC] & LCDCF_ON) != 0) return;
 
@@ -664,6 +673,11 @@ static void sdl_process_events(GameBoy *gb)
         } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
             switch (e.key.keysym.sym) {
             case SDLK_ESCAPE:
+                if (e.key.type == SDL_KEYDOWN) {
+                    show_menu = !show_menu;
+                }
+                break;
+            case SDLK_q:
                 gb->running = false;
                 break;
             case SDLK_g:

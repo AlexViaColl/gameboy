@@ -9,378 +9,144 @@
 
 #include "platform.c"
 
-/*
-BACKLOG:
-[x] - Fix palette in Dr. Mario
-[ ] - LY and STAT should not automatically update when the LCD/PPU is OFF LCDC.7 = 0
-[ ] - Crash due to Illegal Instruction (0xFD) - Super Mario Land
-        It seems that the incorrect Bank (2) is loaded into $4000-$8000 and we
-        try to execute an invalid instruction.
-        Most probably, the reason is we have not implemented timing/interrupts correctly
-[ ] - STAT register does not reflect the mode (0, 1, 2, 3)
-[ ] - Implement Window rendering
-    [ ] - Alleyway
-    [ ] - Super Mario Land => Game Over screen
-    [ ] - Ms. Pacman
-[ ] - Render by lines instead of the entire frame at once (SCX might change between lines!!!)
-[ ] - Other MBC's
-    [ ] - MBC1+RAM+BATTERY ($03)
-    [ ] - MBC3+RAM+BATTERY ($13)
-[ ] - Music
-*/
-
 const Color PALETTE[] = {0xE0F8D0FF, 0x88C070FF, 0x346856FF, 0x081820FF};
 //const Color PALETTE[] = {0xFFFFFFFF, 0xC0C0C0FF, 0x404040FF, 0x000000FF};
 
-static int gb_clock_freq(int clock)
+static int gb_clock_freq(int clock_select)
 {
     int freq[] = {4096, 262144, 65536, 16384};
-    return freq[clock & 3];
+    return freq[clock_select & 3];
 }
 
-void gb_joypad_write(GameBoy *gb, u16 addr, u8 value)
-{
-    assert(addr == rP1);
-    gb->memory[rP1] |= 0xC0;
 
-    if (value == P1F_GET_BTN) {
-        if (gb->button_a) {
-            gb->memory[rP1] &= ~0x01;
-        } else {
-            gb->memory[rP1] |= 0x01;
-        }
-        if (gb->button_b) {
-            gb->memory[rP1] &= ~0x02;
-        } else {
-            gb->memory[rP1] |= 0x02;
-        }
-        if (gb->button_select) {
-            gb->memory[rP1] &= ~0x04;
-        } else {
-            gb->memory[rP1] |= 0x04;
-        }
-        if (gb->button_start) {
-            gb->memory[rP1] &= ~0x08;
-        } else {
-            gb->memory[rP1] |= 0x08;
-        }
-    } else if (value == P1F_GET_DPAD) {
-        if (gb->dpad_right) {
-            gb->memory[rP1] &= ~0x01;
-        } else {
-            gb->memory[rP1] |= 0x01;
-        }
-        if (gb->dpad_left) {
-            gb->memory[rP1] &= ~0x02;
-        } else {
-            gb->memory[rP1] |= 0x02;
-        }
-        if (gb->dpad_up) {
-            gb->memory[rP1] &= ~0x04;
-        } else {
-            gb->memory[rP1] |= 0x04;
-        }
-        if (gb->dpad_down) {
-            gb->memory[rP1] &= ~0x08;
-        } else {
-            gb->memory[rP1] |= 0x08;
-        }
-    } else if (value == P1F_GET_NONE) {
-        gb->memory[rP1] |= 0x0F;
-    }
+#define make_inst1(b0)         make_inst_internal(1, b0, -1, -1)
+#define make_inst2(b0, b1)     make_inst_internal(2, b0, b1, -1)
+#define make_inst3(b0, b1, b2) make_inst_internal(3, b0, b1, b2)
+
+static Inst make_inst_internal(u8 n, u8 b0, u8 b1, u8 b2)
+{
+    assert(n >= 1 && n <= 3);
+    Inst inst = {0};
+    inst.size = n;
+    inst.data[0] = b0;
+    inst.data[1] = b1;
+    inst.data[2] = b2;
+    return inst;
 }
 
-void gb_serial_write(GameBoy *gb, u16 addr, u8 value)
+static Inst gb_fetch_internal(const u8 *data, bool exit_illegal_inst)
 {
-    assert(addr == rSB || addr == rSC);
-    if (0) {}
-    else if (addr == rSB) gb->memory[addr] = value;
-    else if (addr == rSC) {
-        if (value == 0x81) {
-            gb->serial_buffer[gb->serial_idx++] = gb->memory[rSB];
-        }
-        gb->memory[addr] = 0xff;
-    }
-}
+    u8 b = data[0];
 
-void gb_timer_write(GameBoy *gb, u16 addr, u8 value)
-{
-    assert(addr == rDIV || addr == rTIMA || addr == rTMA || addr == rTAC);
-    if (0) {}
-    else if (addr == rDIV)  gb->memory[addr] = 0;
-    else if (addr == rTIMA) gb->memory[addr] = value;
-    else if (addr == rTMA)  gb->memory[addr] = value;
-    else if (addr == rTAC) {
-        if (value & 0x04) {
-            int freq = gb_clock_freq(value);
-            gb->timer_tima = (1000.0 / freq);
-        }
-        gb->memory[addr] = value;
-    }
-}
-
-void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
-{
-    bool is_ch1 = addr >= rNR10 && addr <= rNR14;
-    bool is_ch2 = addr >= rNR21 && addr <= rNR24;
-    bool is_ch3 = addr >= rNR30 && addr <= rNR34;
-    bool is_ch4 = addr >= rNR41 && addr <= rNR44;
-    bool is_wave = addr >= 0xff30 && addr <= 0xff3f;
-    assert(is_ch1 || is_ch2 || is_ch3 || is_ch4 || is_wave ||
-        addr == rNR50 || addr == rNR51 || addr == rNR52);
-
-    gb->memory[addr] = value;
-
-    if (addr == rNR52 && value == 0 && gb->serial_idx > 0) {
-        for (int i = 0; i < gb->serial_idx; i++) {
-            char c = gb->serial_buffer[i];
-            if (c < ' ' || c > '~') c = '.';
-            fprintf(stderr, "%c", c);
-        }
-        fprintf(stderr, "\n");
-
-        size_t len = strlen("Passed\n");
-        const char *passed_part = gb->serial_buffer + gb->serial_idx - len;
-        if (gb->serial_idx > len && strncmp(passed_part, "Passed\n", len) == 0) {
-            exit(0);
-        } else {
-            exit(1);
-        }
-    }
-}
-
-void gb_ppu_write(GameBoy *gb, u16 addr, u8 value)
-{
-    assert(addr == rLCDC || addr == rSTAT || addr == rSCY || addr == rSCX ||
-        addr == rLY || addr == rLYC || addr == rDMA ||
-        addr == rBGP || addr == rOBP0 || addr == rOBP1 || addr == rWY || addr == rWX);
-
-    if (addr == rLCDC || addr == rSTAT) {
-        gb->memory[addr] = value;
-    } else if (addr == rSCY || addr == rSCX) {
-        gb->memory[addr] = value;
-    } else if (addr == rLY) {
-        gb->memory[addr] = value;
-    } else if (addr == rDMA) {
-        assert(value <= 0xdf);
-        u16 src = value << 8;
-        memcpy(gb->memory + 0xfe00, gb->memory + src, 0x9f);
-        gb->memory[addr] = value;
-    } else if (addr == rBGP || addr == rOBP0 || addr == rOBP1) {
-        gb->memory[addr] = value;
-    } else if (addr == rWY || addr == rWX) {
-        gb->memory[addr] = value;
-    }
-}
-
-void gb_io_write(GameBoy *gb, u16 addr, u8 value)
-{
-    assert((addr >= 0xff00 && addr <= 0xff7f) || addr == 0xffff);
-
-    switch (addr) {
-        // Joypad
-        case rP1: gb_joypad_write(gb, addr, value); break;
-
-        // Serial transfer
-        case rSB:
-        case rSC: gb_serial_write(gb, addr, value); break;
-
-        // Timer
-        case rDIV:
-        case rTIMA:
-        case rTMA:
-        case rTAC: gb_timer_write(gb, addr, value); break;
-
-        // Interrupt flag (interrupt request)
-        case rIF: gb->memory[addr] = value; break;
-
-        // APU
-        case rNR10:
-        case rNR11:
-        case rNR12:
-        case rNR13:
-        case rNR14: gb_apu_write(gb, addr, value); break;
-
-        case rNR21:
-        case rNR22:
-        case rNR23:
-        case rNR24: gb_apu_write(gb, addr, value); break;
-
-        case rNR30:
-        case rNR31:
-        case rNR32:
-        case rNR33:
-        case rNR34: gb_apu_write(gb, addr, value); break;
-
-        case rNR41:
-        case rNR42:
-        case rNR43:
-        case rNR44: gb_apu_write(gb, addr, value); break;
-
-        case rNR50:
-        case rNR51:
-        case rNR52: gb_apu_write(gb, addr, value); break;
-
-        case 0xff30:
-        case 0xff31:
-        case 0xff32:
-        case 0xff33:
-        case 0xff34:
-        case 0xff35:
-        case 0xff36:
-        case 0xff37:
-        case 0xff38:
-        case 0xff39:
-        case 0xff3a:
-        case 0xff3b:
-        case 0xff3c:
-        case 0xff3d:
-        case 0xff3e:
-        case 0xff3f: gb_apu_write(gb, addr, value); break;
-
-        // PPU
-        case rLCDC:
-        case rSTAT:
-        case rSCY:
-        case rSCX:
-        case rLY:
-        case rLYC:
-        case rDMA:
-        case rBGP:
-        case rOBP0:
-        case rOBP1:
-        case rWY:
-        case rWX: gb_ppu_write(gb, addr, value); break;
-
-        // CGB specific
-        case 0xff4d: break; // KEY1
-        case 0xff4f: break; // VBK
-        case 0xff51: break; // HDMA1
-        case 0xff52: break; // HDMA2
-        case 0xff53: break; // HDMA3
-        case 0xff54: break; // HDMA4
-        case 0xff55: break; // HDMA5
-        case 0xff56: break; // RP
-        case 0xff68: break; // BCPS/BGPI
-        case 0xff69: break; // BCPD/BGPD
-        case 0xff6a: break; // OCPS/OBPI
-        case 0xff6b: break; // OCPD/OBPD
-        case 0xff6c: break; // OBPRI
-        case 0xff70: break; // SVBK
-        case 0xff76: break; // PCM12
-        case 0xff77: break; // PCM34
-
-        // Interrupt enable
-        case rIE:   gb->memory[addr] = value; break;
-
-        default: break; // assert(0 && "Unreachable");
-    }
-}
-
-Inst gb_fetch(const GameBoy *gb)
-{
-    u8 b = gb_mem_read(gb, gb->PC);
-    const u8 *data = &gb->memory[gb->PC];
-
-    if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
-        b == 0xEB || b == 0xEC || b == 0xED || b == 0xF4 || b == 0xFC || b == 0xFD)
+    if (b == 0xd3 || b == 0xdb || b == 0xdd || b == 0xe3 || b == 0xe4 ||
+        b == 0xeb || b == 0xec || b == 0xed || b == 0xf4 || b == 0xfc || b == 0xfd)
     {
-        gb_dump(gb);
-        fprintf(stderr, "Illegal Instruction 0x%02X\n", b);
-        exit(1);
+        //gb_dump(gb);
+        if (exit_illegal_inst) {
+            fprintf(stderr, "Illegal Instruction 0x%02X\n", b);
+            exit(1);
+        } else {
+            return (Inst){.data = {b}, .size = 1};
+        }
     }
 
     // 1-byte instructions
-    if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+    if (b == 0x00 || b == 0x76 || b == 0xf3 || b == 0xfb) { // NOP, HALT, DI, EI
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 4) { // INC reg8: 00|xxx|100
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 5) { // DEC reg8: 00|xxx|101
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 7) { // RLCA|RRCA|RLA|RRA|DAA|CPL|SCF|CCF: 00|xxx|111
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 3) { // INC reg16|DEC reg16: 00|xxx|011
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 2) { // LD (reg16),A|LD A,(reg16): 00|xxx|010
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b >= 0x40 && b <= 0x7F) {
         bool is_ld_r8_hl = (b >> 6) == 1 && (b & 7) == 6;
         bool is_ld_hl_r8 = b >= 0x70 && b <= 0x77;
         bool is_ld_hl = is_ld_r8_hl || is_ld_hl_r8;
         u8 cycles = is_ld_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b >= 0x80 && b <= 0xBF) {
         bool reads_hl = (b >> 6) == 2 && (b & 7) == 6;
         u8 cycles = reads_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 20};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 20};
     } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) { // POP reg16: 11|xx|0001
-        return (Inst){.data = data, .size = 1, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) { // PUSH reg16: 11|xx|0101
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if ((b >> 6) == 3 && (b & 7) == 7) { // RST xx: 11|xxx|111
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xC9 || b == 0xD9) { // RET|RETI
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xE2 || b == 0xF2) { // LD (C),A|LD A,(C)
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0xE9) { // JP (HL)
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 4, .max_cycles = 4};
     } else if (b == 0xF9) { // LD SP,HL
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b}, .size = 1, .min_cycles = 8, .max_cycles = 8};
     }
 
     // 2-byte instructions
     else if (b == 0x10) { // STOP
-        return (Inst){.data = data, .size = 2, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         u8 cycles = b == 0x36 ? 12 : 8;
-        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     } else if (b == 0x18) { // JR r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) { // JR NZ|NC|Z|C,r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 8, .max_cycles = 12};
     } else if ((b >> 6) == 3 && (b & 7) == 6) { // ADD|ADC|SUB|SBC|AND|XOR|OR|CP d8: 11|xxx|110
-        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 8, .max_cycles = 8};
     } else if (b == 0xE0 || b == 0xF0) { // LDH (a8),A|LDH A,(a8)
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0xE8) { // ADD SP,r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xF8) { // LD HL,SP+r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = 12, .max_cycles = 12};
     }
 
     // Prefix CB
     else if (b == 0xCB) {
-        u8 b2 = gb_mem_read(gb, gb->PC+1);
+        u8 b2 = data[1];
+        //u8 b2 = gb_mem_read(gb, gb->PC+1);
         u8 cycles = (b2 & 7) == 6 ? 16 : 8;
-        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = {b, data[1]}, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
     }
 
     // 3-byte instructions
     else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) { // LD r16,d16
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 12};
     } else if (b == 0x08) { // LD (a16),SP
-        return (Inst){.data = data, .size = 3, .min_cycles = 20, .max_cycles = 20};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 20, .max_cycles = 20};
     } else if (b == 0xC3) { // JP a16
-        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 16, .max_cycles = 16};
     } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 24};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 24};
     } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 16};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 12, .max_cycles = 16};
     } else if (b == 0xCD) { // CALL a16
-        return (Inst){.data = data, .size = 3, .min_cycles = 24, .max_cycles = 24};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 24, .max_cycles = 24};
     } else if (b == 0xEA || b == 0xFA) { // LD (a16),A|LD A,(a16)
-        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = {b, data[1], data[2]}, .size = 3, .min_cycles = 16, .max_cycles = 16};
     }
 
     printf("%02X\n", b);
     assert(0 && "Not implemented");
+}
+
+Inst gb_fetch(const GameBoy *gb)
+{
+    return gb_fetch_internal(gb->memory + gb->PC, false);
 }
 
 const char *gb_decode(Inst inst, char *buf, size_t size)
@@ -504,7 +270,8 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
         } else if (b == 0xF9) {
             snprintf(buf, size, "LD SP,HL");
         } else {
-            assert(0 && "Instruction not implemented");
+            snprintf(buf, size, "???");
+            //assert(0 && "Instruction not implemented");
         }
     }
     // 2-byte instructions
@@ -615,12 +382,13 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     return buf;
 }
 
-bool gb_button_down(GameBoy *gb)
+static bool gb_button_down(GameBoy *gb)
 {
     return gb->button_a || gb->button_b || gb->button_start || gb->button_select ||
         gb->dpad_up || gb->dpad_down || gb->dpad_left || gb->dpad_right;
 }
 
+void gb_timer_write(GameBoy *gb, u16 addr, u8 value);
 int gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
@@ -1674,6 +1442,14 @@ void gb_load_rom_file(GameBoy *gb, const char *path)
 void gb_tick_ms(GameBoy *gb, f64 dt_ms)
 {
     if (gb->paused) return;
+
+    static f64 dt_cycle = 0.0;
+    dt_cycle += dt_ms;
+    while (dt_cycle > (1000.0 / CPU_FREQ)) {
+        gb->elapsed_cycles += 1;
+        dt_cycle -= (1000.0 / CPU_FREQ);
+    }
+
     gb->elapsed_ms += dt_ms;
     gb->timer_div  -= dt_ms;
 
@@ -1700,6 +1476,7 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
 
     int n = 0;
     while (dt > 0) {
+        //if (gb->PC == 0x0050) printf("$0050\n");
         Inst inst = gb_fetch(gb);
         if (((1000.0 / CPU_FREQ) * inst.max_cycles) > dt) {
             break;
@@ -1708,6 +1485,7 @@ void gb_tick_ms(GameBoy *gb, f64 dt_ms)
         int cycles = gb_exec(gb, inst);
         if (cycles < 0) break;
         if (n > 1000) break;
+        break;
 
         dt -= ((1000.0 / CPU_FREQ) * cycles);
         n += 1;
@@ -1780,8 +1558,6 @@ void gb_init_with_args(GameBoy *gb, int argc, char **argv)
     gb->printf = printf;
 
     gb_load_rom_file(gb, argv[argc - 1]);
-
-    gb_init(gb);
 }
 
 void gb_init(GameBoy *gb)
@@ -1790,11 +1566,60 @@ void gb_init(GameBoy *gb)
     ppu_init(&gb->ppu);
 }
 
+void gb_clock_step(GameBoy *gb)
+{
+    gb->clk = (gb->clk + 1) % 4194304;
+    gb->phi = gb->clk >> 2;
+
+    if (gb->prev_inst.m == 0) {
+        gb->mem_rw = RW_R_OPCODE;
+        gb->mem_rw_addr = gb->PC;
+        gb->mem_rw_value = gb->memory[gb->PC];
+        gb->prev_inst = gb_fetch(gb);
+    }
+
+    if ((gb->clk % 4) == 0) {
+        // Exec last cycle of prev inst.
+        if (gb->prev_inst.size != 0) {
+            gb->A += 1;
+            gb->PC += gb->prev_inst.size;
+        }
+
+        // M1: fetch (opcode)
+        if (gb->prev_inst.m == 0) {
+            gb->mem_rw = RW_R_OPCODE;
+            gb->mem_rw_addr = gb->PC;
+            gb->mem_rw_value = gb->memory[gb->PC];
+            gb->prev_inst = gb_fetch(gb);
+            gb->prev_inst.m = gb->prev_inst.min_cycles / 4;
+        }
+    }
+}
+
 void gb_update(GameBoy *gb)
 {
+    static bool initialized = false;
+    if (!initialized) {
+        gb_init(gb);
+        initialized = true;
+    }
+
     timer_update(&gb->timer);
-    //ppu_update(gb);
+    ppu_update(gb);
     cpu_update(gb);
+
+    gb_render_row(gb, gb->memory[rLY]); // LY 0-153
+    if (gb->memory[rLY] == 144) {
+        for (int row = 154; row < 256; row++) {
+            gb_render_row(gb, row);
+        }
+
+        gb_render_sprites(gb);
+    } else if ((gb->memory[rLCDC] & LCDCF_ON) == 0) {
+        for (int row = 0; row < 256; row++) {
+            gb_render_row(gb, row);
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1847,7 +1672,7 @@ void gb_set_reg(GameBoy *gb, Reg8 r8, u8 value)
         case REG_E: gb->E = value; break;
         case REG_H: gb->H = value; break;
         case REG_L: gb->L = value; break;
-        case REG_HL_MEM: gb_mem_write(gb, gb->HL, value); break;
+        case REG_HL_IND: gb_mem_write(gb, gb->HL, value); break;
         case REG_A: gb->A = value; break;
         default: assert(0 && "Invalid register");
     }
@@ -1862,7 +1687,7 @@ u8 gb_get_reg8(const GameBoy *gb, Reg8 r8)
         case REG_E: return gb->E;
         case REG_H: return gb->H;
         case REG_L: return gb->L;
-        case REG_HL_MEM: return gb_mem_read(gb, gb->HL);
+        case REG_HL_IND: return gb_mem_read(gb, gb->HL);
         case REG_A: return gb->A;
         default: assert(0 && "Invalid register");
     }
@@ -1893,6 +1718,247 @@ u16 gb_get_reg16(const GameBoy *gb, Reg16 r16)
 ///////////////////////////////////////////////////////////////////////////////
 //                          Memory Bus                                       //
 ///////////////////////////////////////////////////////////////////////////////
+void gb_joypad_write(GameBoy *gb, u16 addr, u8 value)
+{
+    assert(addr == rP1);
+    gb->memory[rP1] |= 0xC0;
+
+    if (value == P1F_GET_BTN) {
+        if (gb->button_a) {
+            gb->memory[rP1] &= ~0x01;
+        } else {
+            gb->memory[rP1] |= 0x01;
+        }
+        if (gb->button_b) {
+            gb->memory[rP1] &= ~0x02;
+        } else {
+            gb->memory[rP1] |= 0x02;
+        }
+        if (gb->button_select) {
+            gb->memory[rP1] &= ~0x04;
+        } else {
+            gb->memory[rP1] |= 0x04;
+        }
+        if (gb->button_start) {
+            gb->memory[rP1] &= ~0x08;
+        } else {
+            gb->memory[rP1] |= 0x08;
+        }
+    } else if (value == P1F_GET_DPAD) {
+        if (gb->dpad_right) {
+            gb->memory[rP1] &= ~0x01;
+        } else {
+            gb->memory[rP1] |= 0x01;
+        }
+        if (gb->dpad_left) {
+            gb->memory[rP1] &= ~0x02;
+        } else {
+            gb->memory[rP1] |= 0x02;
+        }
+        if (gb->dpad_up) {
+            gb->memory[rP1] &= ~0x04;
+        } else {
+            gb->memory[rP1] |= 0x04;
+        }
+        if (gb->dpad_down) {
+            gb->memory[rP1] &= ~0x08;
+        } else {
+            gb->memory[rP1] |= 0x08;
+        }
+    } else if (value == P1F_GET_NONE) {
+        gb->memory[rP1] |= 0x0F;
+    }
+}
+
+void gb_serial_write(GameBoy *gb, u16 addr, u8 value)
+{
+    assert(addr == rSB || addr == rSC);
+    if (0) {}
+    else if (addr == rSB) gb->memory[addr] = value;
+    else if (addr == rSC) {
+        if (value == 0x81) {
+            gb->serial_buffer[gb->serial_idx++] = gb->memory[rSB];
+        }
+        gb->memory[addr] = 0xff;
+    }
+}
+
+void gb_timer_write(GameBoy *gb, u16 addr, u8 value)
+{
+    assert(addr == rDIV || addr == rTIMA || addr == rTMA || addr == rTAC);
+    if (0) {}
+    else if (addr == rDIV)  gb->memory[addr] = 0;
+    else if (addr == rTIMA) gb->memory[addr] = value;
+    else if (addr == rTMA)  gb->memory[addr] = value;
+    else if (addr == rTAC) {
+        if (value & 0x04) {
+            int freq = gb_clock_freq(value);
+            gb->timer_tima = (1000.0 / freq);
+        }
+        gb->memory[addr] = value;
+    }
+}
+
+void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
+{
+    bool is_ch1 = addr >= rNR10 && addr <= rNR14;
+    bool is_ch2 = addr >= rNR21 && addr <= rNR24;
+    bool is_ch3 = addr >= rNR30 && addr <= rNR34;
+    bool is_ch4 = addr >= rNR41 && addr <= rNR44;
+    bool is_wave = addr >= 0xff30 && addr <= 0xff3f;
+    assert(is_ch1 || is_ch2 || is_ch3 || is_ch4 || is_wave ||
+        addr == rNR50 || addr == rNR51 || addr == rNR52);
+
+    gb->memory[addr] = value;
+
+    if (addr == rNR52 && value == 0 && gb->serial_idx > 0) {
+        for (int i = 0; i < gb->serial_idx; i++) {
+            char c = gb->serial_buffer[i];
+            if (c < ' ' || c > '~') c = '.';
+            fprintf(stderr, "%c", c);
+        }
+        fprintf(stderr, "\n");
+
+        size_t len = strlen("Passed\n");
+        const char *passed_part = gb->serial_buffer + gb->serial_idx - len;
+        if (gb->serial_idx > len && strncmp(passed_part, "Passed\n", len) == 0) {
+            printf("Passed\n");
+            //exit(0);
+        } else {
+            printf("Failed at $%04x\n", gb->PC);
+            //exit(1);
+        }
+    }
+}
+
+void gb_ppu_write(GameBoy *gb, u16 addr, u8 value)
+{
+    assert(addr == rLCDC || addr == rSTAT || addr == rSCY || addr == rSCX ||
+        addr == rLY || addr == rLYC || addr == rDMA ||
+        addr == rBGP || addr == rOBP0 || addr == rOBP1 || addr == rWY || addr == rWX);
+
+    if (addr == rLCDC || addr == rSTAT) {
+        gb->memory[addr] = value;
+    } else if (addr == rSCY || addr == rSCX) {
+        gb->memory[addr] = value;
+    } else if (addr == rLY) {
+        gb->memory[addr] = value;
+    } else if (addr == rDMA) {
+        assert(value <= 0xdf);
+        u16 src = value << 8;
+        memcpy(gb->memory + 0xfe00, gb->memory + src, 0x9f);
+        gb->memory[addr] = value;
+    } else if (addr == rBGP || addr == rOBP0 || addr == rOBP1) {
+        gb->memory[addr] = value;
+    } else if (addr == rWY || addr == rWX) {
+        gb->memory[addr] = value;
+    }
+}
+
+void gb_io_write(GameBoy *gb, u16 addr, u8 value)
+{
+    assert((addr >= 0xff00 && addr <= 0xff7f) || addr == 0xffff);
+
+    switch (addr) {
+        // Joypad
+        case rP1: gb_joypad_write(gb, addr, value); break;
+
+        // Serial transfer
+        case rSB:
+        case rSC: gb_serial_write(gb, addr, value); break;
+
+        // Timer
+        case rDIV:
+        case rTIMA:
+        case rTMA:
+        case rTAC: gb_timer_write(gb, addr, value); break;
+
+        // Interrupt flag (interrupt request)
+        case rIF: gb->memory[addr] = value; break;
+
+        // APU
+        case rNR10:
+        case rNR11:
+        case rNR12:
+        case rNR13:
+        case rNR14: gb_apu_write(gb, addr, value); break;
+
+        case rNR21:
+        case rNR22:
+        case rNR23:
+        case rNR24: gb_apu_write(gb, addr, value); break;
+
+        case rNR30:
+        case rNR31:
+        case rNR32:
+        case rNR33:
+        case rNR34: gb_apu_write(gb, addr, value); break;
+
+        case rNR41:
+        case rNR42:
+        case rNR43:
+        case rNR44: gb_apu_write(gb, addr, value); break;
+
+        case rNR50:
+        case rNR51:
+        case rNR52: gb_apu_write(gb, addr, value); break;
+
+        case 0xff30:
+        case 0xff31:
+        case 0xff32:
+        case 0xff33:
+        case 0xff34:
+        case 0xff35:
+        case 0xff36:
+        case 0xff37:
+        case 0xff38:
+        case 0xff39:
+        case 0xff3a:
+        case 0xff3b:
+        case 0xff3c:
+        case 0xff3d:
+        case 0xff3e:
+        case 0xff3f: gb_apu_write(gb, addr, value); break;
+
+        // PPU
+        case rLCDC:
+        case rSTAT:
+        case rSCY:
+        case rSCX:
+        case rLY:
+        case rLYC:
+        case rDMA:
+        case rBGP:
+        case rOBP0:
+        case rOBP1:
+        case rWY:
+        case rWX: gb_ppu_write(gb, addr, value); break;
+
+        // CGB specific
+        case 0xff4d: break; // KEY1
+        case 0xff4f: break; // VBK
+        case 0xff51: break; // HDMA1
+        case 0xff52: break; // HDMA2
+        case 0xff53: break; // HDMA3
+        case 0xff54: break; // HDMA4
+        case 0xff55: break; // HDMA5
+        case 0xff56: break; // RP
+        case 0xff68: break; // BCPS/BGPI
+        case 0xff69: break; // BCPD/BGPD
+        case 0xff6a: break; // OCPS/OBPI
+        case 0xff6b: break; // OCPD/OBPD
+        case 0xff6c: break; // OBPRI
+        case 0xff70: break; // SVBK
+        case 0xff76: break; // PCM12
+        case 0xff77: break; // PCM34
+
+        // Interrupt enable
+        case rIE: gb->memory[addr] = value; break;
+
+        default: break; // assert(0 && "Unreachable");
+    }
+}
+
 u8 gb_mem_read(const GameBoy *gb, u16 addr)
 {
     //if (addr == 0xFF44) return 0x90;
@@ -2013,6 +2079,7 @@ void ppu_update(GameBoy *gb)
 
     const Timer *timer = &gb->timer;
     f64 elapsed = timer->elapsed_ticks*0.000001;
+    (void)elapsed;
     f64 dt = timer->dt_ticks*0.000001;
 
     PPU *ppu = &gb->ppu;
@@ -2022,14 +2089,14 @@ void ppu_update(GameBoy *gb)
 
     if (!ppu->frame_started) {
         ppu->frame_started = true;
-        printf("%10lf: Frame %ld begin\n", elapsed, ppu->frame);
+        //printf("%10lf: Frame %ld begin\n", elapsed, ppu->frame);
     }
 
     if (!ppu->scanline_started) {
         ppu->scanline_started = true;
         ppu->scanline_mode_count = 0;
         ppu->mode = PM_HBLANK;
-        printf("%10lf:   Scanline %d begin\n", elapsed, ppu->scanline);
+        //printf("%10lf:   Scanline %d begin\n", elapsed, ppu->scanline);
     }
 
     while (ppu->dot_timer <= 0.0) {
@@ -2045,9 +2112,9 @@ void ppu_update(GameBoy *gb)
             ppu->mode = new_mode;
             ppu->scanline_mode_count += 1;
             if (ppu->scanline_mode_count <= 3) {
-                static const char *modes[] = {"HBlank", "VBlank", "OAM   ", "Draw  "};
-                printf("%10lf:     Mode %s (%d) begin |dots: %d\n",
-                    elapsed, modes[ppu->mode], ppu->mode, ppu->dot);
+                //static const char *modes[] = {"HBlank", "VBlank", "OAM   ", "Draw  "};
+                //printf("%10lf:     Mode %s (%d) begin |dots: %d\n",
+                //    elapsed, modes[ppu->mode], ppu->mode, ppu->dot);
             }
         }
     }
@@ -2055,15 +2122,15 @@ void ppu_update(GameBoy *gb)
     while (ppu->scanline_timer <= 0.0) {
         ppu->scanline_started = false;
         ppu->scanline_timer += scanline_time;
-        printf("%10lf:   Scanline %d end\n\n", elapsed, ppu->scanline);
+        //printf("%10lf:   Scanline %d end\n\n", elapsed, ppu->scanline);
         ppu->scanline = (ppu->scanline + 1) % 154;
     }
 
     while (ppu->frame_timer <= 0.0) {
         ppu->frame_started = false;
         ppu->frame_timer += frame_time;
-        printf("%10lf: Frame %ld end\n", elapsed, ppu->frame);
-        printf("=======================================\n");
+        //printf("%10lf: Frame %ld end\n", elapsed, ppu->frame);
+        //printf("=======================================\n");
         ppu->frame += 1;
     }
 
@@ -2171,3 +2238,699 @@ void gb_log_inst_internal(GameBoy *gb, const char *fmt, ...)
     gb_dump(gb);
 }
 
+static void prepare_next_token(Token *token, const char *s, size_t i)
+{
+    char c = s[i];
+    if (isalpha(c)) {
+        token->type = TT_IDENT;
+        token->start = s + i;
+        token->len = 1;
+    } else if (isdigit(c)) {
+        token->type = TT_DEC_LIT;
+        token->start = s + i;
+        token->len = 1;
+    } else if (c == '%') {
+        token->type = TT_BIN_LIT;
+        token->start = s + i;
+        token->len = 1;
+    } else if (c == '$') {
+        token->type = TT_HEX_LIT;
+        token->start = s + i;
+        token->len = 1;
+    }
+}
+
+static u32 bin_lit_value(Token t)
+{
+    assert(t.type == TT_BIN_LIT);
+    assert(t.len >= 2 && t.len <= 17);
+    assert(t.start[0] == '%');
+    return (u32)strtol(t.start + 1, NULL, 2);
+}
+
+static u32 dec_lit_value(Token t)
+{
+    assert(t.type == TT_DEC_LIT);
+    assert(t.len >= 1 && t.len <= 5);
+    return (u32)strtol(t.start, NULL, 10);
+}
+
+static u32 hex_lit_value(Token t)
+{
+    assert(t.type == TT_HEX_LIT);
+    assert(t.len >= 2 && t.len <= 5);
+    assert(t.start[0] == '$');
+    return (u32)strtol(t.start + 1, NULL, 16);
+}
+
+static u32 lit_value(Token t) {
+    switch (t.type) {
+        case TT_BIN_LIT: return bin_lit_value(t);
+        case TT_DEC_LIT: return dec_lit_value(t);
+        case TT_HEX_LIT: return hex_lit_value(t);
+        default: assert(0 && "Invalid literal");
+    }
+}
+
+static bool token_equals(Token t, const char *s)
+{
+    return t.type == TT_IDENT && t.len == strlen(s) && strncasecmp(t.start, s, t.len) == 0;
+}
+
+static bool is_lit_token(Token t)
+{
+    return t.type == TT_BIN_LIT || t.type == TT_DEC_LIT || t.type == TT_HEX_LIT;
+}
+
+static bool is_cond_token(Token t)
+{
+    return token_equals(t, "Z")  || token_equals(t, "C") ||
+           token_equals(t, "NZ") || token_equals(t, "NC");
+}
+
+static bool is_reg16_token(Token t)
+{
+    return token_equals(t, "BC") || token_equals(t, "DE") ||
+           token_equals(t, "HL") || token_equals(t, "SP") ||
+           token_equals(t, "AF");
+}
+
+static bool is_reg16_hl_token(Token t)
+{
+    return t.type == TT_IDENT && t.len == 2 && strncmp(t.start, "HL", 2) == 0;
+}
+
+static Reg16 reg16_value(Token t);
+static bool is_reg16(Token t, Reg16 r)
+{
+    return is_reg16_token(t) && reg16_value(t) == r;
+}
+
+static bool is_reg8_token(Token t)
+{
+    return token_equals(t, "B") || token_equals(t, "C") ||
+           token_equals(t, "D") || token_equals(t, "E") ||
+           token_equals(t, "H") || token_equals(t, "L") ||
+           token_equals(t, "A");
+}
+
+
+static Reg8 reg8_value(Token t);
+static bool is_reg8(Token t, Reg8 r)
+{
+    return is_reg8_token(t) && reg8_value(t) == r;
+}
+
+static bool is_reg8_or_mem_hl(Token *ts)
+{
+    return is_reg8_token(ts[0]) || (ts[0].type == TT_POPEN && ts[2].type == TT_PCLOSE
+        && is_reg16_hl_token(ts[1]));
+}
+
+static bool is_bc_de_hli_hld(Token *ts)
+{
+    return is_reg16(ts[0], REG_BC) || is_reg16(ts[0], REG_DE) ||
+        (is_reg16(ts[0], REG_HL) && ts[1].type == TT_PLUS) ||
+        (is_reg16(ts[0], REG_HL) && ts[1].type == TT_MINUS);
+}
+
+static Opcode get_opcode(Token t)
+{
+    if (token_equals(t, "ADC"))  return OP_ADC;
+    if (token_equals(t, "ADD"))  return OP_ADD;
+    if (token_equals(t, "AND"))  return OP_AND;
+    if (token_equals(t, "BIT"))  return OP_BIT;
+    if (token_equals(t, "CALL")) return OP_CALL;
+    if (token_equals(t, "CCF"))  return OP_CCF;
+    if (token_equals(t, "CP"))   return OP_CP;
+    if (token_equals(t, "CPL"))  return OP_CPL;
+    if (token_equals(t, "DAA"))  return OP_DAA;
+    if (token_equals(t, "DEC"))  return OP_DEC;
+    if (token_equals(t, "DI"))   return OP_DI;
+    if (token_equals(t, "EI"))   return OP_EI;
+    if (token_equals(t, "HALT")) return OP_HALT;
+    if (token_equals(t, "INC"))  return OP_INC;
+    if (token_equals(t, "JP"))   return OP_JP;
+    if (token_equals(t, "JR"))   return OP_JR;
+    if (token_equals(t, "LD"))   return OP_LD;
+    if (token_equals(t, "LDH"))  return OP_LDH;
+    if (token_equals(t, "NOP"))  return OP_NOP;
+    if (token_equals(t, "OR"))   return OP_OR;
+    if (token_equals(t, "POP"))  return OP_POP;
+    if (token_equals(t, "PUSH")) return OP_PUSH;
+    if (token_equals(t, "RES"))  return OP_RES;
+    if (token_equals(t, "RET"))  return OP_RET;
+    if (token_equals(t, "RETI")) return OP_RETI;
+    if (token_equals(t, "RL"))   return OP_RL;
+    if (token_equals(t, "RLA"))  return OP_RLA;
+    if (token_equals(t, "RLC"))  return OP_RLC;
+    if (token_equals(t, "RLCA")) return OP_RLCA;
+    if (token_equals(t, "RR"))   return OP_RR;
+    if (token_equals(t, "RRA"))  return OP_RRA;
+    if (token_equals(t, "RRC"))  return OP_RRC;
+    if (token_equals(t, "RRCA")) return OP_RRCA;
+    if (token_equals(t, "RST"))  return OP_RST;
+    if (token_equals(t, "SBC"))  return OP_SBC;
+    if (token_equals(t, "SCF"))  return OP_SCF;
+    if (token_equals(t, "SET"))  return OP_SET;
+    if (token_equals(t, "SLA"))  return OP_SLA;
+    if (token_equals(t, "SRA"))  return OP_SRA;
+    if (token_equals(t, "SRL"))  return OP_SRL;
+    if (token_equals(t, "STOP")) return OP_STOP;
+    if (token_equals(t, "SUB"))  return OP_SUB;
+    if (token_equals(t, "SWAP")) return OP_SWAP;
+    if (token_equals(t, "XOR"))  return OP_XOR;
+
+    return OP_INVALID;
+}
+
+static bool is_opcode_token(Token t)
+{
+    return get_opcode(t) != OP_INVALID;
+}
+
+static bool is_flag_token(Token t)
+{
+    return token_equals(t, "NZ") || token_equals(t, "Z") ||
+           token_equals(t, "NC") || token_equals(t, "C");
+}
+
+static Flag flag_value(Token t)
+{
+    if (token_equals(t, "NZ")) return Flag_NZ;
+    if (token_equals(t, "Z"))  return Flag_Z;
+    if (token_equals(t, "NC")) return Flag_NC;
+    if (token_equals(t, "C"))  return Flag_C;
+    assert(0 && "Invalid flag");
+    return -1;
+}
+
+static Reg16 reg16_value(Token t)
+{
+    assert(is_reg16_token(t));
+    if (token_equals(t, "BC")) return REG_BC;
+    if (token_equals(t, "DE")) return REG_DE;
+    if (token_equals(t, "HL")) return REG_HL;
+    if (token_equals(t, "SP")) return REG_SP;
+    if (token_equals(t, "AF")) return 3; //REG_AF
+    assert(0 && "Unreachable");
+}
+
+static Reg8 reg8_value(Token t)
+{
+    assert(is_reg8_token(t));
+    if (token_equals(t, "B")) return REG_B;
+    if (token_equals(t, "C")) return REG_C;
+    if (token_equals(t, "D")) return REG_D;
+    if (token_equals(t, "E")) return REG_E;
+    if (token_equals(t, "H")) return REG_H;
+    if (token_equals(t, "L")) return REG_L;
+    if (token_equals(t, "A")) return REG_A;
+    assert(0 && "Unreachable");
+}
+
+static Reg8 reg8_or_mem_hl(Token *ts)
+{
+    assert(is_reg8_or_mem_hl(ts));
+    if (is_reg8_token(ts[0])) return reg8_value(ts[0]);
+    else return REG_HL_IND;
+}
+
+void gb_disassemble(const void *rom, size_t size)
+{
+    u16 addr = 0x0000;
+    const u8 *pc = (const u8*)rom;
+    while (size > 0) {
+        Inst inst = gb_fetch_internal(pc, false);
+        printf("%04x: ", addr);
+        if (inst.size == 1) printf("%02x           ", inst.data[0]);
+        if (inst.size == 2) printf("%02x %02x        ", inst.data[0], inst.data[1]);
+        if (inst.size == 3) printf("%02x %02x %02x     ", inst.data[0], inst.data[1], inst.data[2]);
+        char buf[32] = {0};
+        printf("%s\n", gb_decode(inst, buf, sizeof(buf)));
+
+        size -= inst.size;
+        pc += inst.size;
+        addr += inst.size;
+
+        if (addr == 0x0040) printf("_VBLANK_HANDLER:\n");
+        if (addr == 0x0048) printf("_STAT___HANDLER:\n");
+        if (addr == 0x0050) printf("_TIMER__HANDLER:\n");
+        if (addr == 0x0058) printf("_SERIAL_HANDLER:\n");
+        if (addr == 0x0060) printf("_JOYPAD_HANDLER:\n");
+        if (addr == 0x0104) {
+            printf("_CARTRIDGE_HEADER:\n");
+            printf("  ; Nintendo Logo\n");
+            printf("  ; Title\n");
+            printf("  ; Manufacturer Code\n");
+            printf("  ; CGB Flag\n");
+            printf("  ; New Licensee Code\n");
+            printf("  ; SGB Flag\n");
+            printf("  ; Cartridge Type\n");
+            printf("  ; ROM Size\n");
+            printf("  ; RAM Size\n");
+            printf("  ; Desination Code\n");
+            printf("  ; Old Licensee Code\n");
+            printf("  ; Mask ROM Version\n");
+            printf("  ; Header Checksum\n");
+            printf("  ; Global Checksum\n");
+            printf("_LABEL_150:\n");
+            size -= 72;
+            pc += 72;
+            addr += 72;
+        }
+    }
+}
+
+void gb_assemble_prog_to_buf(void *buf, size_t size, const char *program)
+{
+    (void)buf;
+    (void)size;
+    (void)program;
+    // TODO
+}
+
+void* gb_assemble_inst_to_buf(void *buf, size_t *size, const char *src)
+{
+    assert(buf && size);
+    Inst inst = gb_assemble_inst(src);
+    assert(inst.size < *size);
+    memcpy(buf, inst.data, inst.size);
+    *size -= inst.size;
+    return (u8*)buf + inst.size;
+}
+
+TokenArray gb_tokenize(const char *s)
+{
+    TokenArray arr = {0};
+
+    size_t len = strlen(s);
+    size_t i = 0;
+
+    Token token = (Token){
+        .type = TT_INVALID,
+        .start = s,
+        .len = 0,
+    };
+
+    while (i < len) {
+        bool is_single_char_token = true;
+        Token single_char_token = {0};
+        switch (s[i]) {
+            case ',': single_char_token = (Token){TT_COMMA,  s + i, 1}; break;
+            case ':': single_char_token = (Token){TT_COLON,  s + i, 1}; break;
+            case '.': single_char_token = (Token){TT_DOT,    s + i, 1}; break;
+            case '-': single_char_token = (Token){TT_MINUS,  s + i, 1}; break;
+            case '+': single_char_token = (Token){TT_PLUS,   s + i, 1}; break;
+            case '(': single_char_token = (Token){TT_POPEN,  s + i, 1}; break;
+            case ')': single_char_token = (Token){TT_PCLOSE, s + i, 1}; break;
+
+            default: is_single_char_token = false; break;
+        }
+
+        if (is_single_char_token) {
+            if (token.type != TT_INVALID) {
+                arr.tokens[arr.count++] = token;
+            }
+            token = single_char_token;
+        } else {
+            if (token.type != TT_INVALID && (token.type <= TT_PCLOSE || isspace(s[i]))) {
+                arr.tokens[arr.count++] = token;
+                token.type = TT_INVALID;
+            }
+
+            if (token.type <= TT_PCLOSE) {
+                prepare_next_token(&token, s, i);
+            } else if (!isspace(s[i])) {
+                token.len += 1;
+            }
+        }
+
+        i += 1;
+    }
+
+    if (token.type != TT_INVALID) {
+        arr.tokens[arr.count++] = token;
+    }
+
+    return arr;
+}
+
+Inst gb_assemble_inst(const char *s)
+{
+    printf("%s\n", s);
+    TokenArray arr = gb_tokenize(s);
+    Token *tokens = arr.tokens;
+    size_t token_count = arr.count;
+
+    Inst inst = {0};
+
+    assert(token_count > 0);
+    if (is_opcode_token(tokens[0])) {
+        switch (get_opcode(tokens[0])) {
+        case OP_ADC: {
+            assert(is_reg8(tokens[1], REG_A));
+            assert(tokens[2].type == TT_COMMA);
+            if (is_lit_token(tokens[3])) return make_inst2(0xce, (u8)lit_value(tokens[3])); // ADC A, $12
+            else return make_inst1(0x88 | reg8_or_mem_hl(tokens + 3)); // ADC A, B
+        } break;
+        case OP_ADD: {
+            assert(tokens[2].type == TT_COMMA);
+            if (is_reg8(tokens[1], REG_A)) {
+                if (is_lit_token(tokens[3])) return make_inst2(0xc6, (u8)lit_value(tokens[3])); // ADD A, $12
+                else return make_inst1(0x80 | reg8_or_mem_hl(tokens + 3)); // ADD A, B
+            } else if (is_reg16(tokens[1], REG_HL)) {
+                return make_inst1(0x09 | (reg16_value(tokens[3]) << 4)); // ADD HL, BC
+            } else if (is_reg16(tokens[1], REG_SP)) {
+                return make_inst2(0xe8, (u8)lit_value(tokens[3])); // ADD SP, $12
+            }
+        } break;
+        case OP_AND: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_lit_token(tokens[1])) return make_inst2(0xe6, (u8)lit_value(tokens[1])); // AND $12
+            else return make_inst1(0xa0 | reg8_or_mem_hl(tokens + 1)); // AND B
+        } break;
+        case OP_BIT: {
+            assert(token_count == 4 || token_count == 6);
+            assert(tokens[2].type == TT_COMMA);
+            u32 bit = lit_value(tokens[1]) & 7;
+            return make_inst2(0xcb, 0x40 | (bit << 3) | reg8_or_mem_hl(tokens + 3));
+        } break;
+        case OP_CALL: {
+            u32 addr = lit_value(tokens[token_count - 1]);
+            u8 addr_lo = addr & 0xff;
+            u8 addr_hi = (addr >> 8) & 0xff;
+            if (token_count == 2) {
+                return make_inst3(0xcd, addr_lo, addr_hi);
+            } else if (token_count == 4) {
+                return make_inst3(0xc4 | (flag_value(tokens[1])) << 3, addr_lo, addr_hi);
+            }
+        } break;
+        case OP_CCF: return make_inst1(0x3f); break;
+        case OP_CPL: return make_inst1(0x2f); break;
+        case OP_CP: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_lit_token(tokens[1])) return make_inst2(0xfe, (u8)lit_value(tokens[1])); // CP $12
+            else return make_inst1(0xb8 | reg8_or_mem_hl(tokens + 1)); // CP B
+        } break;
+        case OP_DAA: return make_inst1(0x27); break;
+        case OP_DEC: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_reg16_token(tokens[1])) return make_inst1(0x0b | (reg16_value(tokens[1]) << 4));
+            else return make_inst1(0x05 | (reg8_or_mem_hl(tokens + 1)) << 3);
+        } break;
+        case OP_DI:   return make_inst1(0xf3); break;
+        case OP_EI:   return make_inst1(0xfb); break;
+        case OP_HALT: return make_inst1(0x76); break;
+        case OP_INC: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_reg16_token(tokens[1])) return make_inst1(0x03 | reg16_value(tokens[1]) << 4);
+            else return make_inst1(0x04 | reg8_or_mem_hl(tokens + 1) << 3);
+        } break;
+        case OP_JP: {
+            if (is_reg16_hl_token(tokens[2])) return make_inst1(0xe9);
+
+            u32 addr = lit_value(tokens[token_count - 1]);
+            u8 addr_lo = addr & 0xff;
+            u8 addr_hi = (addr >> 8) & 0xff;
+            if (token_count == 2) {
+                return make_inst3(0xc3, addr_lo, addr_hi);
+            } else if (token_count == 4) {
+                return make_inst3(0xc2 | (flag_value(tokens[1])) << 3, addr_lo, addr_hi);
+            }
+        } break;
+        case OP_JR: {
+            u32 rel = lit_value(tokens[token_count - 1]);
+            if (token_count == 2) {
+                return make_inst2(0x18, rel);
+            } else if (token_count == 4) {
+                return make_inst2(0x20 | (flag_value(tokens[1])) << 3, rel);
+            }
+        } break;
+        case OP_LDH: {
+            assert(token_count == 6);
+            if (is_reg8(tokens[1], REG_A)) return make_inst2(0xf0, lit_value(tokens[4]));
+            else return make_inst2(0xe0, lit_value(tokens[2]));
+        } break;
+        case OP_LD: {
+            assert(token_count == 4 || token_count == 6 || token_count == 7);
+            if (is_reg8_or_mem_hl(tokens + 1) &&
+                (is_reg8_or_mem_hl(tokens + 3) || is_reg8_or_mem_hl(tokens + 5))
+            ) {
+                // LD B,B ... LD B,(HL) ... LD (HL),B ... LD A,A
+                Reg8 dst = reg8_or_mem_hl(tokens + 1);
+                Reg8 src = reg8_or_mem_hl(tokens + ((dst != REG_HL_IND) ? 3 : 5));
+                return make_inst1(0x40 | (dst << 3) | src);
+            } else if (is_reg16_token(tokens[1]) && is_lit_token(tokens[3])) {
+                // LD BC, d16 ... LD SP, d16
+                u32 value = lit_value(tokens[3]);
+                u8 value_lo = value & 0xff;
+                u8 value_hi = (value >> 8) & 0xff;
+                return make_inst3(0x01 | reg16_value(tokens[1]) << 4, value_lo, value_hi);
+            } else if (is_lit_token(tokens[token_count - 1]) && tokens[token_count - 2].type == TT_PLUS) {
+                // LD HL,SP+r8
+                return make_inst2(0xf8, lit_value(tokens[token_count - 1]));
+            } else if (is_lit_token(tokens[token_count - 1]) && tokens[token_count - 2].type != TT_PLUS) {
+                // LD B,d8 ... LD A,d8
+                u8 value = lit_value(tokens[token_count - 1]);
+                return make_inst2(0x06 | (reg8_or_mem_hl(tokens + 1)) << 3, value);
+            }
+            // LD (BC),A | LD (DE),A | LD (HL+),A | LD (HL-),A
+            // LD A,(BC) | LD A,(DE) | LD A,(HL+) | LD A,(HL-)
+
+            if (is_reg16_token(tokens[1])) {
+                Reg16 r16 = reg16_value(tokens[1]);
+                assert(tokens[2].type == TT_COMMA);
+                if (is_lit_token(tokens[3])) {
+                    // LD BC, d16
+                    u32 value = lit_value(tokens[3]);
+                    assert(value <= 0xffff);
+                    inst.size = 3;
+                    inst.data[0] = (r16 << 4) | 0x01;
+                    inst.data[1] = (value >> 0) & 0xff;
+                    inst.data[2] = (value >> 8) & 0xff;
+                } else if (is_reg16_token(tokens[3]) && reg16_value(tokens[3]) == REG_SP) {
+                    // LD HL, SP+r8
+                    assert(r16 == REG_HL);
+                    assert(token_count == 6);
+                    assert(tokens[4].type == TT_PLUS);
+                    assert(is_lit_token(tokens[5]));
+                    u32 value = lit_value(tokens[5]);
+                    assert(value <= 0xff); // TODO: negative
+                    inst.size = 2;
+                    inst.data[0] = 0xf8;
+                    inst.data[1] = (u8)value;
+                } else if (is_reg16_token(tokens[3]) && reg16_value(tokens[3]) == REG_HL) {
+                    // LD SP, HL
+                    assert(r16 == REG_SP);
+                    assert(token_count == 4);
+                    return make_inst1(0xf9);
+                }
+            } else if (is_reg8_token(tokens[1])) {
+                if (is_reg8_token(tokens[3])) {
+                    // LD B, C
+                    assert(token_count == 4);
+                    Reg8 dst = reg8_value(tokens[1]);
+                    Reg8 src = reg8_value(tokens[3]);
+                    return make_inst1(0x40 | (dst << 3) | src);
+                } else if (token_count == 4 && is_lit_token(tokens[3])) {
+                    // LD B, $12
+                    u32 value = lit_value(tokens[3]);
+                    assert(value <= 0xff);
+                    Reg8 dst = reg8_value(tokens[1]);
+                    return make_inst2(0x06 | (dst << 3), (u8)value);
+                } else if (token_count == 6 && is_reg16_token(tokens[4])) {
+                    Reg16 r16 = reg16_value(tokens[4]);
+                    Reg8 dst = reg8_value(tokens[1]);
+                    if (r16 == REG_HL) {
+                        // LD B, (HL)
+                        assert(tokens[2].type == TT_COMMA);
+                        assert(tokens[3].type == TT_POPEN);
+                        assert(tokens[5].type == TT_PCLOSE);
+                        Reg8 src = REG_HL_IND;
+                        return make_inst1(0x40 | (dst << 3) | src);
+                    } else if (r16 == REG_BC && dst == REG_A) { // LD A, (BC)
+                        return make_inst1(0x0a);
+                    } else if (r16 == REG_DE && dst == REG_A) { // LD A, (DE)
+                        return make_inst1(0x1a);
+                    }
+                } else if (token_count == 6 && is_lit_token(tokens[4])) {
+                    // LD A, ($1234)
+                    assert(reg8_value(tokens[1]) == REG_A);
+                    assert(tokens[3].type == TT_POPEN);
+                    assert(tokens[5].type == TT_PCLOSE);
+                    u32 value = lit_value(tokens[4]);
+                    assert(value <= 0xffff);
+                    inst.size = 3;
+                    inst.data[0] = 0xfa;
+                    inst.data[1] = (value >> 0) & 0xff;
+                    inst.data[2] = (value >> 8) & 0xff;
+                } else if (token_count == 6 && is_reg8_token(tokens[4])) {
+                    assert(tokens[3].type == TT_POPEN);
+                    assert(reg8_value(tokens[4]) == REG_C);
+                    assert(tokens[5].type == TT_PCLOSE);
+                    assert(reg8_value(tokens[1]) == REG_A);
+                    return make_inst1(0xf2);
+                } else if (token_count == 7 && tokens[5].type == TT_PLUS) { // LD A, (HL+)
+                    return make_inst1(0x2a);
+                } else if (token_count == 7 && tokens[5].type == TT_MINUS) { // LD A, (HL-)
+                    return make_inst1(0x3a);
+                }
+            } else if (tokens[1].type == TT_POPEN) {
+                if (token_count == 6 && is_reg16_token(tokens[2]) && is_reg8_token(tokens[5])) {
+                    Reg16 r16 = reg16_value(tokens[2]);
+                    Reg8 src = reg8_value(tokens[5]);
+                    if (r16 == REG_HL) { // LD (HL), B
+                        assert(reg16_value(tokens[2]) == REG_HL);
+                        return make_inst1(0x70 | src);
+                    } else if (r16 == REG_BC && src == REG_A) { // LD (BC), A
+                        return make_inst1(0x02);
+                    } else if (r16 == REG_DE && src == REG_A) { // LD (DE), A
+                        return make_inst1(0x12);
+                    }
+                } else if (token_count == 6 && is_lit_token(tokens[5])) {
+                    // LD (HL), $12
+                    assert(tokens[1].type == TT_POPEN);
+                    assert(reg16_value(tokens[2]) == REG_HL);
+                    assert(tokens[3].type == TT_PCLOSE);
+                    u32 value = lit_value(tokens[5]);
+                    assert(value <= 0xff);
+                    return make_inst2(0x36, (u8)value);
+                } else if (token_count == 6 && is_lit_token(tokens[2])) {
+                    u32 value  = lit_value(tokens[2]);
+                    assert(value <= 0xffff);
+                    assert(tokens[3].type == TT_PCLOSE);
+                    if (is_reg16_token(tokens[5])) {
+                        // LD ($1234), SP
+                        assert(reg16_value(tokens[5]) == REG_SP);
+                        inst.data[0] = 0x08;
+                    } else if (is_reg8_token(tokens[5])) {
+                        // LD ($1234), A
+                        assert(reg8_value(tokens[5]) == REG_A);
+                        inst.data[0] = 0xea;
+                    }
+                    inst.size = 3;
+                    inst.data[1] = (value >> 0) & 0xff;
+                    inst.data[2] = (value >> 8) & 0xff;
+                } else if (token_count == 6 && is_reg8_token(tokens[2])) {
+                    assert(tokens[1].type == TT_POPEN);
+                    assert(reg8_value(tokens[2]) == REG_C);
+                    assert(tokens[3].type == TT_PCLOSE);
+                    assert(reg8_value(tokens[5]) == REG_A);
+                    return make_inst1(0xe2);
+                } else if (token_count == 7 && tokens[3].type == TT_PLUS) { // LD (HL+), A
+                    return make_inst1(0x22);
+                } else if (token_count == 7 && tokens[3].type == TT_MINUS) { // LD (HL-), A
+                    return make_inst1(0x32);
+                }
+            } else if (is_lit_token(tokens[1])) {
+
+            }
+        } break;
+        case OP_NOP: return make_inst1(0x00); break;
+        case OP_OR: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_lit_token(tokens[1])) {
+                return make_inst2(0xf6, (u8)lit_value(tokens[1])); // OR $12
+            } else {
+                return make_inst1(0xb0 | reg8_or_mem_hl(tokens + 1)); // OR B
+            }
+        } break;
+        case OP_POP: {
+            assert(token_count == 2);
+            return make_inst1(0xc1 | (reg16_value(tokens[1]) << 4));
+        } break;
+        case OP_PUSH: {
+            assert(token_count == 2);
+            return make_inst1(0xc5 | (reg16_value(tokens[1]) << 4));
+        } break;
+        case OP_RES: {
+            assert(token_count == 4 || token_count == 6);
+            assert(tokens[2].type == TT_COMMA);
+            u32 bit = lit_value(tokens[1]) & 7;
+            return make_inst2(0xcb, 0x80 | (bit << 3) | reg8_or_mem_hl(tokens + 3));
+        } break;
+        case OP_RETI: return make_inst1(0xd9); break;
+        case OP_RET: {
+            if (token_count == 1) return make_inst1(0xc9);
+            else return make_inst1(0xc0 | (flag_value(tokens[1])) << 3);
+        } break;
+        case OP_RLA:  return make_inst1(0x17); break;
+        case OP_RLCA: return make_inst1(0x07); break;
+        case OP_RLC: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x00 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_RL: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x10 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_RRCA: return make_inst1(0x0f); break;
+        case OP_RRA:  return make_inst1(0x1f); break;
+        case OP_RRC: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x08 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_RR: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x18 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_RST: {
+            assert(token_count == 2);
+            u32 rst = lit_value(tokens[1]);
+            assert(rst >= 0 && rst <= 0x38 && (rst % 8) == 0);
+            return make_inst1(0xc7 | (rst / 8) << 3);
+        } break;
+        case OP_SBC: {
+            assert(token_count == 4 || token_count == 6);
+            if (is_lit_token(tokens[3])) {
+                return make_inst2(0xde, (u8)lit_value(tokens[3])); // SBC A, $12
+            } else {
+                return make_inst1(0x98 | reg8_or_mem_hl(tokens + 3)); // SBC A, B
+            }
+        } break;
+        case OP_SCF: return make_inst1(0x37); break;
+        case OP_SET: {
+            assert(token_count == 4 || token_count == 6);
+            assert(tokens[2].type == TT_COMMA);
+            u32 bit = lit_value(tokens[1]) & 7;
+            return make_inst2(0xcb, 0xc0 | (bit << 3) | reg8_or_mem_hl(tokens + 3));
+        } break;
+        case OP_SLA: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x20 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_SRA: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x28 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_SRL: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x38 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_STOP: return make_inst2(0x10, 0x00); break;
+        case OP_SUB: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_lit_token(tokens[1])) {
+                return make_inst2(0xd6, (u8)lit_value(tokens[1])); // SUB $12
+            } else {
+                return make_inst1(0x90 | reg8_or_mem_hl(tokens + 1)); // SUB B
+            }
+        } break;
+        case OP_SWAP: {
+            assert(token_count == 2 || token_count == 4);
+            return make_inst2(0xcb, 0x30 | reg8_or_mem_hl(tokens + 1));
+        } break;
+        case OP_XOR: {
+            assert(token_count == 2 || token_count == 4);
+            if (is_lit_token(tokens[1])) return make_inst2(0xee, (u8)lit_value(tokens[1])); // XOR $12
+            else return make_inst1(0xa8 | reg8_or_mem_hl(tokens + 1)); // XOR B
+        } break;
+        default: assert(0 && "Unreachable");
+        }
+    } else {
+        assert(0 && "Invalid Opcode");
+    }
+
+    return inst;
+}

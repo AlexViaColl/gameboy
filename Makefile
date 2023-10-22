@@ -7,7 +7,7 @@ LIBS = `pkg-config --libs sdl2`
 
 .PHONY: clean, test
 
-all: gb_sdl gb_headless gb_test
+all: gb_sdl gb_headless gb_test ui
 
 test: gb_test gb_headless
 	./gb_test && \
@@ -24,14 +24,17 @@ test: gb_test gb_headless
 	./gb_headless "./test-roms/blargg/cpu_instrs/individual/10-bit ops.gb" && \
 	./gb_headless "./test-roms/blargg/cpu_instrs/individual/11-op a,(hl).gb"
 
+ui: ui.c
+	$(CC) $(CFLAGS) -o ui $(LIBS) ui.c
+
 gb_sdl: gb_sdl.c gb.c
 	$(CC) $(CFLAGS) -O3 -o gb_sdl $(LIBS) gb_sdl.c gb.c
 
 gb_headless: gb_headless.c gb.c
-	$(CC) $(CFLAGS) -O3 -o gb_headless $(LIBS) gb_headless.c gb.c
+	$(CC) $(CFLAGS) -O3 -o gb_headless gb_headless.c gb.c
 
 gb_test: gb_test.c gb.c
-	$(CC) -o gb_test gb_test.c gb.c
+	$(CC) $(CFLAGS) -o gb_test gb_test.c gb.c
 
 clean:
 	rm -f *.o gb_sdl gb_headless gb_test
