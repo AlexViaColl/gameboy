@@ -1823,7 +1823,7 @@ void gb_apu_write(GameBoy *gb, u16 addr, u8 value)
         const char *passed_part = gb->serial_buffer + gb->serial_idx - len;
         if (gb->serial_idx > len && strncmp(passed_part, "Passed\n", len) == 0) {
             printf("Passed\n");
-            //exit(0);
+            exit(0);
         } else {
             printf("Failed at $%04x\n", gb->PC);
             //exit(1);

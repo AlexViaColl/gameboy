@@ -161,7 +161,7 @@ int main(int argc, char **argv)
     gb_init_with_args(&gb, argc, argv);
 
     bool running = true;
-    bool single_stepping = true;
+    bool single_stepping = argc != 2;
     while (running) {
         if (single_stepping) {
             Command cmd = read_command();
