@@ -39,7 +39,6 @@ static SDL_Renderer *renderer;
 static SDL_AudioDeviceID device;
 static ViewerType viewer_type = VT_GAME;
 
-static f64 frame_ms;
 static bool show_menu;
 
 static void render_debug_tile(SDL_Renderer *renderer, u8 *tile, int x, int y, int w, int h)
@@ -474,8 +473,6 @@ static void render_debug_tilemap(GameBoy *gb, SDL_Renderer *renderer, int w, int
 
 static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
 {
-    if (frame_ms < 16.0) return;
-
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
 
@@ -492,8 +489,6 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
     }
 
     if (viewer_type == VT_GAME) {
-        if (gb->memory[rLY] != 144 && (gb->memory[rLCDC] & LCDCF_ON) != 0) return;
-
         SDL_SetRenderDrawColor(renderer, HEX_TO_COLOR(BG));
         SDL_RenderClear(renderer);
 
@@ -516,9 +511,6 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
                 SDL_RenderFillRect(renderer, &r);
             }
         }
-
-        frame_ms -= 16.0;
-        SDL_RenderPresent(renderer);
     } else {
         // Debug rendering
         if (viewer_type != VT_REGS &&
@@ -534,10 +526,9 @@ static void sdl_render(GameBoy *gb, SDL_Renderer *renderer)
         } else if (viewer_type == VT_REGS) {
             render_debug_hw_regs(gb, renderer, w, h);
         }
-
-        frame_ms -= 16.0;
-        SDL_RenderPresent(renderer);
     }
+
+    SDL_RenderPresent(renderer);
 }
 
 static bool cstr_ends_with(const char *src, const char *end) {
@@ -789,6 +780,7 @@ void emulator(int argc, char **argv)
     Uint64 counter_freq  = SDL_GetPerformanceFrequency();
     Uint64 start_counter = SDL_GetPerformanceCounter();
     Uint64 prev_counter  = start_counter;
+    f64 frame_ms = 0.0;
     while (gb.running) {
         Uint64 curr_counter = SDL_GetPerformanceCounter();
         Uint64 dt_counter = curr_counter - prev_counter;
@@ -800,7 +792,10 @@ void emulator(int argc, char **argv)
 
         gb_update(&gb);
 
-        sdl_render(&gb, renderer);
+        if (frame_ms >= 1.0/60.0) {
+            sdl_render(&gb, renderer);
+            frame_ms -= (1.0/60.0);
+        }
     }
 }
 
