@@ -945,17 +945,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
 {
     assert(gb->PC <= 0x7FFF || gb->PC >= 0xFF80 || (gb->PC >= 0xA000 && gb->PC <= 0xDFFF));
 
-    if (inst.size == 1 && inst.data[0] == 0x40) {
-        u8 test_result = gb->memory[_RAM];
-        if (test_result == 0xff) {
-            printf("Test success\n");
-            exit(0);
-        } else {
-            fprintf(stderr, "Test failure (%d)\n", test_result);
-            exit(1);
-        }
-    }
-
     if (gb->boot_mode && gb->PC == 0x100) {
         memcpy(gb->memory, gb->rom, 0x100);
         gb->boot_mode = false;
