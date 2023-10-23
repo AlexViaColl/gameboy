@@ -1,7 +1,6 @@
 roms/
-tmp/
 
 *.gb
 
-gb
-test
+gb_sdl
+gb_test

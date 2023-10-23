@@ -7,14 +7,13 @@ LIBS = `pkg-config --libs sdl2`
 
 .PHONY: clean, test
 
-all: gb_sdl.c gb.c
-	$(CC) $(CFLAGS) -O3 -o gb $(LIBS) gb_sdl.c gb.c
+all: gb_sdl gb_test
 
-test: build_test
-	./test
+gb_sdl: gb_sdl.c gb.c
+	$(CC) $(CFLAGS) -O3 -o gb_sdl $(LIBS) gb_sdl.c gb.c
 
-build_test: gb_test.c gb.c
-	$(CC) -o test gb_test.c gb.c
+gb_test: gb_test.c gb.c
+	$(CC) $(CFLAGS) -o gb_test gb_test.c gb.c
 
 clean:
-	rm -f *.o gb test
+	rm -f *.o gb_sdl gb_test

@@ -10,7 +10,7 @@
 ## Quick Start
 ```console
 $ ./build.sh
-$ ./gb <path to ROM>
+$ ./gb_sdl <path to ROM>
 ```
 
 ![GameBoy Boot](./boot_hello.gif)
