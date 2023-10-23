@@ -1,11 +1,6 @@
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "gb.h"
 
 #include <SDL.h>
-
-#include "gb.h"
 
 #define SCALE  8
 #define SAMPLE_RATE 48000
