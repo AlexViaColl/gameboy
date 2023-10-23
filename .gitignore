@@ -1,6 +1,4 @@
 roms/
 
-*.gb
-
 gb_sdl
 gb_test
