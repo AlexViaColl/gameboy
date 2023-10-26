@@ -332,10 +332,10 @@ static void render_debug_hw_regs(GameBoy *gb, SDL_Renderer *renderer, int w, int
         gb_get_flag(gb, Flag_C) ? 'C' : '-');
     render_debug_text(renderer, text, row++, col + 12);
 
-    sprintf(text, "BC = %02X %02X", gb_get_reg(gb, REG_B), gb_get_reg(gb, REG_C));
+    sprintf(text, "BC = %02X %02X", gb_get_reg8(gb, REG_B), gb_get_reg8(gb, REG_C));
     render_debug_text(renderer, text, row++, col);
 
-    sprintf(text, "DE = %02X %02X", gb_get_reg(gb, REG_D), gb_get_reg(gb, REG_E));
+    sprintf(text, "DE = %02X %02X", gb_get_reg8(gb, REG_D), gb_get_reg8(gb, REG_E));
     render_debug_text(renderer, text, row++, col);
 
     sprintf(text, "HL = %04X", gb->HL);

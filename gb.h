@@ -20,6 +20,12 @@ typedef double f64;
 typedef u32 Color;
 extern const Color PALETTE[4];
 
+#define BIT_CLR(x, index) (x) &= ~(1 << (index))
+#define BIT_SET(x, index) (x) |=  (1 << (index))
+#define BIT_ASSIGN(x, index, value) do {                  \
+    if (value) BIT_SET(x, index); else BIT_CLR(x, index); \
+} while (false)
+
 #define WIDTH  160 // 20 tiles
 #define HEIGHT 144 // 18 tiles
 
@@ -75,6 +81,7 @@ extern const Color PALETTE[4];
 #define rNR13   0xFF13 // Sound channel 1 period low
 #define rNR14   0xFF14 // Sound channel 1 period high & control
 
+//      rNR20   0xFF16 // Sound channel 2 unused
 #define rNR21   0xFF16 // Sound channel 2 length timer & duty cycle
 #define rNR22   0xFF17 // Sound channel 2 volume & envelope
 #define rNR23   0xFF18 // Sound channel 2 period low
@@ -86,6 +93,7 @@ extern const Color PALETTE[4];
 #define rNR33   0xFF1D // Sound channel 3 period low
 #define rNR34   0xFF1E // Sound channel 3 period high & control
 
+//      rNR40   0xFF1F // Sound channel 4 unused
 #define rNR41   0xFF20 // Sound channel 4 length timer
 #define rNR42   0xFF21 // Sound channel 4 volume & envelope
 #define rNR43   0xFF22 // Sound channel 4 frequency & randomness
@@ -160,15 +168,12 @@ extern const Color PALETTE[4];
 #define P1F_GET_NONE (P1F_GET_BTN | P1F_GET_DPAD)
 
 typedef struct GameBoy {
-    // CPU freq:        4.194304 MHz    (~4194304 cycles/s)
-    // Horizontal sync: 9.198 KHz       ( 0.10871929 ms/line)
-    // Vertical sync:   59.73 Hz        (16.74200569 ms/frame)
-    u16 AF; // Accumulator & Flags
-    u16 BC;
-    u16 DE;
-    u16 HL;
-    u16 SP; // Stack Pointer
-    u16 PC; // Program Counter
+    union { u16 AF; struct { u8 F; u8 A; }; };
+    union { u16 BC; struct { u8 C; u8 B; }; };
+    union { u16 DE; struct { u8 E; u8 D; }; };
+    union { u16 HL; struct { u8 L; u8 H; }; };
+    u16 SP;
+    u16 PC;
 
     u8 IME; // Interrupt master enable flag (Instructions EI, DI, RETI, ISR)
     u8 ime_cycles;
@@ -247,7 +252,7 @@ typedef enum Reg8 {
     REG_E = 3,
     REG_H = 4,
     REG_L = 5,
-    REG_HL_MEM = 6,
+    REG_HL_IND = 6,
     REG_A = 7,
     REG_COUNT,
 } Reg8;
@@ -284,16 +289,18 @@ void gb_dump(const GameBoy *gb);
 u8 gb_mem_read(const GameBoy *gb, u16 addr);
 void gb_mem_write(GameBoy *gb, u16 addr, u8 value);
 
+// CPU
+#define UNCHANGED (-1)
 u8 gb_get_flag(const GameBoy *gb, Flag flag);
 void gb_set_flag(GameBoy *gb, Flag flag, u8 value);
 void gb_set_flags(GameBoy *gb, int z, int n, int h, int c);
 
-u8 gb_get_reg(const GameBoy *gb, Reg8 r8);
+u8 gb_get_reg8(const GameBoy *gb, Reg8 r8);
 u16 gb_get_reg16(const GameBoy *gb, Reg16 r16);
-void gb_set_reg(GameBoy *gb, Reg8 r8, u8 value);
+void gb_set_reg8(GameBoy *gb, Reg8 r8, u8 value);
 void gb_set_reg16(GameBoy *gb, Reg16 r16, u16 value);
 
-const char* gb_reg_to_str(Reg8 r8);
+const char* gb_reg8_to_str(Reg8 r8);
 const char* gb_reg16_to_str(Reg16 r16);
 
 u8 *read_entire_file(const char *path, size_t *size);
