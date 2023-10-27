@@ -862,66 +862,65 @@ static u16 gb_stack_pop16(GameBoy *gb)
     return (high << 8) | low;
 }
 
-static bool gb_process_interrupts(GameBoy *gb)
+static void gb_process_interrupts(GameBoy *gb)
 {
+    if (!gb->IME) return;
     u8 IE = gb->memory[rIE];
     u8 IF = gb->memory[rIF];
-    if (gb->IME) {
-        // VBlank Interrupt
-        if (((IF & 0x01) == 0x01) && ((IE & 0x01) == 0x01)) {
-            gb_stack_push16(gb, gb->PC);
-            gb->PC = 0x0040;
 
-            // Clear IME and corresponding bit of IF
-            if ((IF & 0x01) == 0x01) {
-                gb->IME = 0;
-                gb->memory[rIF] &= ~0x01;
-            }
-            return true;
+    // VBlank Interrupt
+    if (((IF & 0x01) == 0x01) && ((IE & 0x01) == 0x01)) {
+        gb_stack_push16(gb, gb->PC);
+        gb->PC = 0x0040;
+
+        // Clear IME and corresponding bit of IF
+        if ((IF & 0x01) == 0x01) {
+            gb->IME = 0;
+            gb->memory[rIF] &= ~0x01;
         }
-
-        // STAT Interrupt
-        if (((IF & 0x02) == 0x02) && ((IE & 0x02) == 0x02)) {
-            gb_stack_push16(gb, gb->PC);
-            gb->PC = 0x0048;
-
-            // Clear IME and corresponding bit of IF
-            if ((IF & 0x02) == 0x02) {
-                gb->IME = 0;
-                gb->memory[rIF] &= ~0x02;
-            }
-            return true;
-        }
-
-        // Timer Interrupt
-        if (((IF & 0x04) == 0x04) && ((IE & 0x04) == 0x04)) {
-            if (gb->halted) gb->halted = false;
-
-            gb_stack_push16(gb, gb->PC);
-            gb->PC = 0x0050;
-
-            // Clear IME and corresponding bit of IF
-            if ((IF & 0x04) == 0x04) {
-                gb->IME = 0;
-                gb->memory[rIF] &= ~0x04;
-            }
-            return true;
-        }
-
-        // Joypad Interrupt
-        if (((IF & 0x1F) == 0x1F) && ((IE & 0x1F) == 0x1F)) {
-            gb_stack_push16(gb, gb->PC);
-            gb->PC = 0x0060;
-
-            // Clear IME and corresponding bit of IF
-            if ((IF & 0x1F) == 0x1F) {
-                gb->IME = 0;
-                gb->memory[rIF] &= ~0x1F;
-            }
-            return true;
-        }
+        return;
     }
-    return false;
+
+    // STAT Interrupt
+    if (((IF & 0x02) == 0x02) && ((IE & 0x02) == 0x02)) {
+        gb_stack_push16(gb, gb->PC);
+        gb->PC = 0x0048;
+
+        // Clear IME and corresponding bit of IF
+        if ((IF & 0x02) == 0x02) {
+            gb->IME = 0;
+            gb->memory[rIF] &= ~0x02;
+        }
+        return;
+    }
+
+    // Timer Interrupt
+    if (((IF & 0x04) == 0x04) && ((IE & 0x04) == 0x04)) {
+        if (gb->halted) gb->halted = false;
+
+        gb_stack_push16(gb, gb->PC);
+        gb->PC = 0x0050;
+
+        // Clear IME and corresponding bit of IF
+        if ((IF & 0x04) == 0x04) {
+            gb->IME = 0;
+            gb->memory[rIF] &= ~0x04;
+        }
+        return;
+    }
+
+    // Joypad Interrupt
+    if (((IF & 0x1F) == 0x1F) && ((IE & 0x1F) == 0x1F)) {
+        gb_stack_push16(gb, gb->PC);
+        gb->PC = 0x0060;
+
+        // Clear IME and corresponding bit of IF
+        if ((IF & 0x1F) == 0x1F) {
+            gb->IME = 0;
+            gb->memory[rIF] &= ~0x1F;
+        }
+        return;
+    }
 }
 
 bool gb_exec(GameBoy *gb, Inst inst)
@@ -949,8 +948,6 @@ bool gb_exec(GameBoy *gb, Inst inst)
         if ((IF & IE) == 0) return false;
         gb->halted = false;
     }
-
-    if (gb_process_interrupts(gb)) return true;
 
     if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
         return false;
@@ -1461,6 +1458,8 @@ bool gb_exec(GameBoy *gb, Inst inst)
     if (!control_flow_change) gb->PC += inst.size;
     assert(gb->PC <= 0xffff);
     gb->inst_executed += 1;
+
+    gb_process_interrupts(gb);
 
     return true;
 }
