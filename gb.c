@@ -518,91 +518,91 @@ Inst gb_fetch_inst(const GameBoy *gb)
 
     // 1-byte instructions
     if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 4) { // INC reg8: 00|xxx|100
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 5) { // DEC reg8: 00|xxx|101
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 7) { // RLCA|RRCA|RLA|RRA|DAA|CPL|SCF|CCF: 00|xxx|111
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 3) { // INC reg16|DEC reg16: 00|xxx|011
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 2) { // LD (reg16),A|LD A,(reg16): 00|xxx|010
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     } else if (b >= 0x40 && b <= 0x7F) {
         bool is_ld_r8_hl = (b >> 6) == 1 && (b & 7) == 6;
         bool is_ld_hl_r8 = b >= 0x70 && b <= 0x77;
         bool is_ld_hl = is_ld_r8_hl || is_ld_hl_r8;
         u8 cycles = is_ld_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 1, .cycles = cycles, .max_cycles = cycles};
     } else if (b >= 0x80 && b <= 0xBF) {
         bool reads_hl = (b >> 6) == 2 && (b & 7) == 6;
         u8 cycles = reads_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 1, .cycles = cycles, .max_cycles = cycles};
     } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 20};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 20};
     } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) { // POP reg16: 11|xx|0001
-        return (Inst){.data = data, .size = 1, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 1, .cycles = 12, .max_cycles = 12};
     } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) { // PUSH reg16: 11|xx|0101
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
     } else if ((b >> 6) == 3 && (b & 7) == 7) { // RST xx: 11|xxx|111
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
     } else if (b == 0xC9 || b == 0xD9) { // RET|RETI
-        return (Inst){.data = data, .size = 1, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
     } else if (b == 0xE2 || b == 0xF2) { // LD (C),A|LD A,(C)
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     } else if (b == 0xE9) { // JP (HL)
-        return (Inst){.data = data, .size = 1, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
     } else if (b == 0xF9) { // LD SP,HL
-        return (Inst){.data = data, .size = 1, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
     }
 
     // 2-byte instructions
     else if (b == 0x10) { // STOP
-        return (Inst){.data = data, .size = 2, .min_cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 2, .cycles = 4, .max_cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         u8 cycles = b == 0x36 ? 12 : 8;
-        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 2, .cycles = cycles, .max_cycles = cycles};
     } else if (b == 0x18) { // JR r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
     } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) { // JR NZ|NC|Z|C,r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 8, .max_cycles = 12};
     } else if ((b >> 6) == 3 && (b & 7) == 6) { // ADD|ADC|SUB|SBC|AND|XOR|OR|CP d8: 11|xxx|110
-        return (Inst){.data = data, .size = 2, .min_cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 2, .cycles = 8, .max_cycles = 8};
     } else if (b == 0xE0 || b == 0xF0) { // LDH (a8),A|LDH A,(a8)
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
     } else if (b == 0xE8) { // ADD SP,r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 2, .cycles = 16, .max_cycles = 16};
     } else if (b == 0xF8) { // LD HL,SP+r8
-        return (Inst){.data = data, .size = 2, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
     }
 
     // Prefix CB
     else if (b == 0xCB) {
         u8 b2 = gb_mem_read(gb, gb->PC+1);
         u8 cycles = (b2 & 7) == 6 ? 16 : 8;
-        return (Inst){.data = data, .size = 2, .min_cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 2, .cycles = cycles, .max_cycles = cycles};
     }
 
     // 3-byte instructions
     else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) { // LD r16,d16
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 12};
     } else if (b == 0x08) { // LD (a16),SP
-        return (Inst){.data = data, .size = 3, .min_cycles = 20, .max_cycles = 20};
+        return (Inst){.data = data, .size = 3, .cycles = 20, .max_cycles = 20};
     } else if (b == 0xC3) { // JP a16
-        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 3, .cycles = 16, .max_cycles = 16};
     } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 24};
+        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 24};
     } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-        return (Inst){.data = data, .size = 3, .min_cycles = 12, .max_cycles = 16};
+        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 16};
     } else if (b == 0xCD) { // CALL a16
-        return (Inst){.data = data, .size = 3, .min_cycles = 24, .max_cycles = 24};
+        return (Inst){.data = data, .size = 3, .cycles = 24, .max_cycles = 24};
     } else if (b == 0xEA || b == 0xFA) { // LD (a16),A|LD A,(a16)
-        return (Inst){.data = data, .size = 3, .min_cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 3, .cycles = 16, .max_cycles = 16};
     }
 
     printf("%02X\n", b);
@@ -949,12 +949,12 @@ bool gb_exec(GameBoy *gb, Inst inst)
         gb->halted = false;
     }
 
-    if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
+    if (gb->timer_mcycle < (inst.cycles/4)*MCYCLE_MS) {
         return false;
     }
 
-    if (inst.min_cycles == inst.max_cycles) {
-        gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+    if (inst.cycles == inst.max_cycles) {
+        gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
     }
 
     bool control_flow_change = false;
@@ -1163,7 +1163,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 }
                 control_flow_change = true;
             } else {
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+                gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC9) {
             gb_log_inst("RET");
@@ -1238,7 +1238,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 }
                 control_flow_change = true;
             } else {
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+                gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xe0) {
             gb_log_inst("LDH (FF00+%02X),A", inst.data[1]);
@@ -1424,7 +1424,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 }
                 control_flow_change = true;
             } else {
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+                gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xc4 || b == 0xd4 || b == 0xcc || b == 0xdc) {
             Flag f = (b >> 3) & 3;
@@ -1437,7 +1437,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 }
                 control_flow_change = true;
             } else {
-                gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
+                gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xcd) {
             gb_log_inst("CALL 0x%04X", n);

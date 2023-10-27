@@ -1346,7 +1346,7 @@ void test_time_add_a_mem_hl(void)
     gb.memory[0] = 0x86;
 
     Inst inst = gb_fetch_inst(&gb);
-    assert(inst.min_cycles == 8);
+    assert(inst.cycles == 8);
     assert(inst.max_cycles == 8);
 
     gb_tick(&gb, 0);

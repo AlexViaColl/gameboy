@@ -240,7 +240,7 @@ typedef struct GameBoy {
 typedef struct Inst {
     const u8 *data;
     u8 size;
-    u8 min_cycles;
+    u8 cycles;
     u8 max_cycles;
 } Inst;
 
