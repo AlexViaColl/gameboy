@@ -862,31 +862,10 @@ static u16 gb_stack_pop16(GameBoy *gb)
     return (high << 8) | low;
 }
 
-bool gb_exec(GameBoy *gb, Inst inst)
+static bool gb_process_interrupts(GameBoy *gb)
 {
-    assert(gb->PC <= 0x7fff || gb->PC >= 0xff80 || (gb->PC >= 0xa000 && gb->PC <= 0xdfff));
-
-    if (gb->boot_mode && gb->PC == 0x100) {
-        memcpy(gb->memory, gb->rom, 0x100);
-        gb->boot_mode = false;
-    }
-
-    if (gb->stopped) {
-        if (gb_button_down(gb)) {
-            gb->stopped = false;
-            gb->PC += 2;
-            gb_timer_write(gb, rDIV, 0);
-            return true;
-        }
-    }
-
     u8 IE = gb->memory[rIE];
     u8 IF = gb->memory[rIF];
-    if (gb->halted) {
-        if ((IF & IE) == 0) return false;
-        gb->halted = false;
-    }
-
     if (gb->IME) {
         // VBlank Interrupt
         if (((IF & 0x01) == 0x01) && ((IE & 0x01) == 0x01)) {
@@ -942,6 +921,36 @@ bool gb_exec(GameBoy *gb, Inst inst)
             return true;
         }
     }
+    return false;
+}
+
+bool gb_exec(GameBoy *gb, Inst inst)
+{
+    assert(gb->PC <= 0x7fff || gb->PC >= 0xff80 || (gb->PC >= 0xa000 && gb->PC <= 0xdfff));
+
+    if (gb->boot_mode && gb->PC == 0x100) {
+        memcpy(gb->memory, gb->rom, 0x100);
+        gb->boot_mode = false;
+    }
+
+    if (gb->stopped) {
+        if (gb_button_down(gb)) {
+            gb->stopped = false;
+            gb->PC += 2;
+            gb_timer_write(gb, rDIV, 0);
+            return true;
+        }
+        return false;
+    }
+
+    u8 IE = gb->memory[rIE];
+    u8 IF = gb->memory[rIF];
+    if (gb->halted) {
+        if ((IF & IE) == 0) return false;
+        gb->halted = false;
+    }
+
+    if (gb_process_interrupts(gb)) return true;
 
     if (gb->timer_mcycle < (inst.min_cycles/4)*MCYCLE_MS) {
         return false;
@@ -951,85 +960,67 @@ bool gb_exec(GameBoy *gb, Inst inst)
         gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
     }
 
+    bool control_flow_change = false;
     u8 b = inst.data[0];
     // 1-byte instructions
     if (inst.size == 1) {
         if (b == 0x00) {
             gb_log_inst("NOP");
-            gb->PC += inst.size;
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
-            Reg16 src = (b >> 4) & 3;
-            gb_log_inst("ADD HL,%s", gb_reg16_to_str(src));
-            u16 hl_prev = gb_get_reg16(gb, REG_HL);
-            u16 reg_prev = gb_get_reg16(gb, src);
-            u16 res = hl_prev + reg_prev;
-            gb_set_reg16(gb, REG_HL, res);
-            int h = ((hl_prev & 0xfff) + (reg_prev & 0xfff)) > 0xfff;
-            int c = ((hl_prev & 0xffff) + (reg_prev & 0xffff)) > 0xffff;
+            Reg16 r16 = (b >> 4) & 3;
+            gb_log_inst("ADD HL,%s", gb_reg16_to_str(r16));
+            u16 reg_prev = gb_get_reg16(gb, r16);
+            int h = ((gb->HL & 0xfff) + (reg_prev & 0xfff)) > 0xfff;
+            int c = ((gb->HL & 0xffff) + (reg_prev & 0xffff)) > 0xffff;
+            gb->HL = gb->HL + reg_prev;
             gb_set_flags(gb, UNCHANGED, 0, h, c);
-            gb->PC += inst.size;
-        } else if ( // INC reg
+        } else if ( // INC r8
             b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
             b == 0x0c || b == 0x1c || b == 0x2c || b == 0x3c
         ) {
-            Reg8 reg = (b >> 3) & 7;
-            gb_log_inst("INC %s", gb_reg8_to_str(reg));
-            u8 prev = gb_get_reg8(gb, reg);
+            Reg8 r8 = (b >> 3) & 7;
+            gb_log_inst("INC %s", gb_reg8_to_str(r8));
+            u8 prev = gb_get_reg8(gb, r8);
             u8 res = prev + 1;
-            gb_set_reg8(gb, reg, res);
+            gb_set_reg8(gb, r8, res);
             gb_set_flags(gb, res == 0, 0, (res & 0xf) < (prev & 0xf), UNCHANGED);
-            gb->PC += inst.size;
-        } else if ( // DEC reg
+        } else if ( // DEC r8
             b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
             b == 0x0d || b == 0x1d || b == 0x2d || b == 0x3d
         ) {
-            Reg8 reg = (b >> 3) & 7;
-            gb_log_inst("DEC %s", gb_reg8_to_str(reg));
-            u8 prev = gb_get_reg8(gb, reg);
+            Reg8 r8 = (b >> 3) & 7;
+            gb_log_inst("DEC %s", gb_reg8_to_str(r8));
+            u8 prev = gb_get_reg8(gb, r8);
             int res = prev - 1;
-            gb_set_reg8(gb, reg, res);
+            gb_set_reg8(gb, r8, res);
             gb_set_flags(gb, res == 0, 1, (res & 0xf) > (prev & 0xf), UNCHANGED);
-            gb->PC += inst.size;
         } else if (b == 0x07) {
             gb_log_inst("RLCA");
-            u8 prev = gb_get_reg8(gb, REG_A);
-            u8 res = (prev << 1) | (prev >> 7);
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, 0, 0, 0, prev >> 7);
-            gb->PC += inst.size;
+            u8 c = gb->A >> 7;
+            gb->A = (gb->A << 1) | (gb->A >> 7);
+            gb_set_flags(gb, 0, 0, 0, c);
         } else if (b == 0x0f) {
             gb_log_inst("RRCA");
-            u8 a = gb_get_reg8(gb, REG_A);
-            u8 c = a & 1;
-            u8 res = (a >> 1) | (c << 7);
-            gb_set_reg8(gb, REG_A, res);
+            u8 c = gb->A & 1;
+            gb->A = (gb->A >> 1) | (c << 7);
             gb_set_flags(gb, 0, 0, 0, c);
-            gb->PC += inst.size;
         } else if (b == 0x17) {
             gb_log_inst("RLA");
-            u8 prev = gb_get_reg8(gb, REG_A);
-            u8 res = (prev << 1) | gb_get_flag(gb, Flag_C);
-            u8 c = prev >> 7;
-            gb_set_reg8(gb, REG_A, res);
+            u8 c = gb->A >> 7;
+            gb->A = (gb->A << 1) | gb_get_flag(gb, Flag_C);
             gb_set_flags(gb, 0, 0, 0, c);
-            gb->PC += inst.size;
         } else if (b == 0x1f) {
             gb_log_inst("RRA");
-            u8 a = gb_get_reg8(gb, REG_A);
-            u8 c = a & 1;
-            u8 res = (a >> 1) | (gb_get_flag(gb, Flag_C) << 7);
-            gb_set_reg8(gb, REG_A, res);
+            u8 c = gb->A & 1;
+            gb->A = (gb->A >> 1) | (gb_get_flag(gb, Flag_C) << 7);
             gb_set_flags(gb, 0, 0, 0, c);
-            gb->PC += inst.size;
         } else if (b == 0x27) {
             gb_log_inst("DAA");
-            u8 a = gb_get_reg8(gb, REG_A);
-            u8 n = gb_get_flag(gb, Flag_N);
             u8 prev_h = gb_get_flag(gb, Flag_H);
             u8 prev_c = gb_get_flag(gb, Flag_C);
-            u8 res = a;
+            u8 res = gb->A;
             u8 c = 0;
-            if (n) {
+            if (gb_get_flag(gb, Flag_N)) {
                 // Previous operation was a subtraction
                 if (prev_c) {
                     res -= 0x60;
@@ -1040,141 +1031,104 @@ bool gb_exec(GameBoy *gb, Inst inst)
                 }
             } else {
                 // Previous operation was an addition
-                if (((a & 0xf) > 0x09) || prev_h) {
+                if (((gb->A & 0xf) > 0x09) || prev_h) {
                     res += 0x06;
                 }
-                if ((a > 0x99) | prev_c) {
+                if ((gb->A > 0x99) | prev_c) {
                     res += 0x60;
                     c = 1;
                 }
             }
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, UNCHANGED, 0, c);
-            gb->PC += inst.size;
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, UNCHANGED, 0, c);
         } else if (b == 0x2f) {
             gb_log_inst("CPL");
-            u8 a = gb_get_reg8(gb, REG_A);
-            gb_set_reg8(gb, REG_A, ~a);
+            gb->A = ~gb->A;
             gb_set_flags(gb, UNCHANGED, 1, 1, UNCHANGED);
-            gb->PC += inst.size;
         } else if (b == 0x37) {
             gb_log_inst("SCF");
             gb_set_flags(gb, UNCHANGED, 0, 0, 1);
-            gb->PC += inst.size;
         } else if (b == 0x3f) {
             gb_log_inst("CCF");
             gb_set_flags(gb, UNCHANGED, 0, 0, !gb_get_flag(gb, Flag_C));
-            gb->PC += inst.size;
         } else if (b == 0x0a || b == 0x1a) {
             Reg16 reg = (b >> 4) & 3;
             gb_log_inst("LD A,(%s)", gb_reg16_to_str(reg));
-            u8 value = gb_mem_read(gb, gb_get_reg16(gb, reg));
-            gb_set_reg8(gb, REG_A, value);
-            gb->PC += inst.size;
+            gb->A = gb_mem_read(gb, gb_get_reg16(gb, reg));
         } else if (b == 0x02 || b == 0x12) {
-            Reg16 reg = (b >> 4) & 3;
-            gb_log_inst("LD (%s),A", gb_reg16_to_str(reg));
-            u16 addr = gb_get_reg16(gb, reg);
-            u8 value = gb_get_reg8(gb, REG_A);
-            gb_mem_write(gb, addr, value);
-            gb->PC += inst.size;
+            Reg16 r16 = (b >> 4) & 3;
+            gb_log_inst("LD (%s),A", gb_reg16_to_str(r16));
+            gb_mem_write(gb, gb_get_reg16(gb, r16), gb->A);
         } else if (b == 0x22 || b == 0x32) {
             gb_log_inst("LD (HL%c),A", b == 0x22 ? '+' : '-');
-            u8 a = gb_get_reg8(gb, REG_A);
-            gb_mem_write(gb, gb->HL, a);
+            gb_mem_write(gb, gb->HL, gb->A);
             if (b == 0x22) gb->HL += 1;
             else gb->HL -= 1;
-            gb->PC += inst.size;
         } else if (b == 0x0a || b == 0x1a) {
-            Reg16 reg = (b >> 4) & 3;
-            gb_log_inst("LD A,(%s)", gb_reg16_to_str(reg));
-            u16 addr = gb_get_reg16(gb, reg);
-            u8 value = gb_mem_read(gb, addr);
-            gb_set_reg8(gb, REG_A, value);
-            gb->PC += inst.size;
+            Reg16 r16 = (b >> 4) & 3;
+            gb_log_inst("LD A,(%s)", gb_reg16_to_str(r16));
+            gb->A = gb_mem_read(gb, gb_get_reg16(gb, r16));
         } else if (b == 0x2a || b == 0x3a) {
             gb_log_inst("LD A,(HL%c)", b == 0x2a ? '+' : '-');
-            u8 value = gb_mem_read(gb, gb->HL);
-            gb_set_reg8(gb, REG_A, value);
+            gb->A = gb_mem_read(gb, gb->HL);
             if (b == 0x2a) gb->HL += 1;
             else gb->HL -= 1;
-            gb->PC += inst.size;
         } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
-            Reg16 reg = (b >> 4) & 3;
-            gb_log_inst("INC %s", gb_reg16_to_str(reg));
-            gb_set_reg16(gb, reg, gb_get_reg16(gb, reg) + 1);
-            gb->PC += inst.size;
+            Reg16 r16 = (b >> 4) & 3;
+            gb_log_inst("INC %s", gb_reg16_to_str(r16));
+            gb_set_reg16(gb, r16, gb_get_reg16(gb, r16) + 1);
         } else if (b == 0x0b || b == 0x1b || b == 0x2b || b == 0x3b) {
-            Reg16 reg = (b >> 4) & 3;
-            gb_log_inst("DEC %s", gb_reg16_to_str(reg));
-            gb_set_reg16(gb, reg, gb_get_reg16(gb, reg) - 1);
-            gb->PC += inst.size;
+            Reg16 r16 = (b >> 4) & 3;
+            gb_log_inst("DEC %s", gb_reg16_to_str(r16));
+            gb_set_reg16(gb, r16, gb_get_reg16(gb, r16) - 1);
+        } else if (b == 0x76) {
+            gb_log_inst("HALT");
+            gb->halted = true;
         } else if (b >= 0x40 && b <= 0x7f) {
-            if (b == 0x76) {
-                gb_log_inst("HALT");
-                gb->halted = true;
-                gb->PC += inst.size;
-                return true;
-            }
             Reg8 src = b & 7;
             Reg8 dst = (b >> 3) & 7;
             gb_log_inst("LD %s,%s", gb_reg8_to_str(dst), gb_reg8_to_str(src));
-            u8 value = gb_get_reg8(gb, src);
-            gb_set_reg8(gb, dst, value);
-            gb->PC += inst.size;
+            gb_set_reg8(gb, dst, gb_get_reg8(gb, src));
         } else if (b >= 0x80 && b <= 0x87) {
             Reg8 reg = b & 7;
             gb_log_inst("ADD A,%s", gb_reg8_to_str(reg));
-            u8 a = gb_get_reg8(gb, REG_A);
             u8 r = gb_get_reg8(gb, reg);
-            u8 res = a + r;
-            int h = ((a & 0xf) + (r & 0xf)) > 0xf;
-            int c = ((a & 0xff) + (r & 0xff)) > 0xff;
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, h, c);
-            gb->PC += inst.size;
+            int h = ((gb->A & 0xf)  + (r & 0xf)) > 0xf;
+            int c = ((gb->A & 0xff) + (r & 0xff)) > 0xff;
+            gb->A = gb->A + r;
+            gb_set_flags(gb, gb->A == 0, 0, h, c);
         } else if (b >= 0x88 && b <= 0x8f) {
             Reg8 reg = b & 7;
             gb_log_inst("ADC A,%s", gb_reg8_to_str(reg));
-            u8 a = gb_get_reg8(gb, REG_A);
             u8 r = gb_get_reg8(gb, reg);
             u8 prev_c = gb_get_flag(gb, Flag_C);
-            u8 res = prev_c + a + r;
-            int h = ((a & 0xf) + (r & 0xf) + prev_c) > 0xf;
-            int c = ((a & 0xff) + (r & 0xff) + prev_c) > 0xff;
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, h, c);
-            gb->PC += inst.size;
+            int h = ((gb->A & 0xf)  + (r & 0xf)  + prev_c) > 0xf;
+            int c = ((gb->A & 0xff) + (r & 0xff) + prev_c) > 0xff;
+            gb->A = prev_c + gb->A + r;
+            gb_set_flags(gb, gb->A == 0, 0, h, c);
         } else if (b >= 0x90 && b <= 0x97) {
             Reg8 reg = b & 7;
             gb_log_inst("SUB A,%s", gb_reg8_to_str(reg));
-            int prev = gb_get_reg8(gb, REG_A);
-            int res = prev - gb_get_reg8(gb, reg);
-            u8 c = prev >= gb_get_reg8(gb, reg) ? 0 : 1;
-            gb_set_reg8(gb, REG_A, res);
-            u8 h = (prev & 0xf) < (res & 0xf);
+            int res = gb->A - gb_get_reg8(gb, reg);
+            u8 c = gb->A >= gb_get_reg8(gb, reg) ? 0 : 1;
+            u8 h = (gb->A & 0xf) < (res & 0xf);
+            gb->A = res;
             gb_set_flags(gb, res == 0, 1, h, c);
-            gb_set_flag(gb, Flag_C, c);
-            gb->PC += inst.size;
         } else if (b >= 0x98 && b <= 0x9f) {
             Reg8 reg = b & 7;
             gb_log_inst("SBC A,%s", gb_reg8_to_str(reg));
-            u8 a = gb_get_reg8(gb, REG_A);
             u8 r = gb_get_reg8(gb, reg);
             u8 prev_c = gb_get_flag(gb, Flag_C);
-            u8 res = (u8)(a - prev_c - r);
-            int h = ((a & 0xF) - (r & 0xF) - prev_c) < 0;
-            int c = ((a & 0xFF) - (r & 0xFF) - prev_c) < 0;
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 1, h, c);
-            gb->PC += inst.size;
+            u8 res = (u8)(gb->A - prev_c - r);
+            int h = ((gb->A & 0xF) - (r & 0xF) - prev_c) < 0;
+            int c = ((gb->A & 0xFF) - (r & 0xFF) - prev_c) < 0;
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, 1, h, c);
         } else if (b >= 0xB0 && b <= 0xB7) {
             Reg8 reg = b & 0x7;
             gb_log_inst("OR %s", gb_reg8_to_str(reg));
-            u8 res = gb_get_reg8(gb, REG_A) | gb_get_reg8(gb, reg);
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, 0, 0);
-            gb->PC += inst.size;
+            gb->A = gb->A | gb_get_reg8(gb, reg);
+            gb_set_flags(gb, gb->A == 0, 0, 0, 0);
         } else if (b >= 0xB8 && b <= 0xBF) {
             Reg8 reg = b & 0x7;
             gb_log_inst("CP %s", gb_reg8_to_str(reg));
@@ -1183,39 +1137,25 @@ bool gb_exec(GameBoy *gb, Inst inst)
             int res = a - n;
             u8 h = (a & 0xF) < (res & 0xF);
             gb_set_flags(gb, res == 0, 1, h, a < n);
-            gb->PC += inst.size;
         } else if (b >= 0xA0 && b <= 0xA7) {
             Reg8 reg = b & 0x7;
             gb_log_inst("AND %s", gb_reg8_to_str(reg));
-            u8 res = gb_get_reg8(gb, REG_A) & gb_get_reg8(gb, reg);
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, 1, 0);
-            gb->PC += inst.size;
+            gb->A = gb->A & gb_get_reg8(gb, reg);
+            gb_set_flags(gb, gb->A == 0, 0, 1, 0);
         } else if (b >= 0xA8 && b <= 0xAF) {
             Reg8 reg = b & 0x7;
             gb_log_inst("XOR %s", gb_reg8_to_str(reg));
-            u8 res = gb_get_reg8(gb, REG_A) ^ gb_get_reg8(gb, reg);
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, 0, 0);
-            gb->PC += inst.size;
+            gb->A = gb->A ^ gb_get_reg8(gb, reg);
+            gb_set_flags(gb, gb->A == 0, 0, 0, 0);
         } else if (b == 0xE2) {
-            gb_log_inst("LD(0xFF00+%02X),%02X", gb_get_reg8(gb, REG_C), gb_get_reg8(gb, REG_A));
-            u8 a = gb_get_reg8(gb, REG_A);
-            u8 c = gb_get_reg8(gb, REG_C);
-            gb_mem_write(gb, 0xFF00 + c, a);
-            gb->PC += inst.size;
+            gb_log_inst("LD(0xFF00+%02X),%02X", gb->C, gb->A);
+            gb_mem_write(gb, 0xFF00 + gb->C, gb->A);
         } else if (b == 0xF2) {
             gb_log_inst("LD A,(C)");
-            u8 c = gb_get_reg8(gb, REG_C);
-            u8 value = gb_mem_read(gb, 0xFF00 + c);
-            gb_set_reg8(gb, REG_A, value);
-            gb->PC += inst.size;
+            gb->A = gb_mem_read(gb, 0xFF00 + gb->C);
         } else if (b == 0xF3 || b == 0xFB) {
             gb_log_inst(b == 0xF3 ? "DI" : "EI");
-            //fprintf(stderr, "%04X: %s\n", gb->PC, b == 0xF3 ? "DI" : "EI");
             gb->IME = b == 0xF3 ? 0 : 1;
-            if (gb->IME) gb->ime_cycles = 1;
-            gb->PC += inst.size;
         } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("RET %s", gb_flag_to_str(f));
@@ -1224,35 +1164,33 @@ bool gb_exec(GameBoy *gb, Inst inst)
                     gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
                     gb->PC = gb_stack_pop16(gb);
                 }
+                control_flow_change = true;
             } else {
-                gb->PC += inst.size;
                 gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xC9) {
             gb_log_inst("RET");
             gb->PC = gb_stack_pop16(gb);
+            control_flow_change = true;
         } else if (b == 0xD9) {
             gb_log_inst("RETI");
             gb->PC = gb_stack_pop16(gb);
             gb->IME = 1;
+            control_flow_change = true;
         } else if (b == 0xC1 || b == 0xD1 || b == 0xE1) {
             Reg16 reg = (b >> 4) & 0x3;
             gb_log_inst("POP %s", gb_reg16_to_str(reg));
             gb_set_reg16(gb, reg, gb_stack_pop16(gb));
-            gb->PC += inst.size;
         } else if (b == 0xF1) {
             gb_log_inst("POP AF");
             gb->AF = (gb_stack_pop16(gb) & 0xfff0); // Clear the low 4-bits
-            gb->PC += inst.size;
         } else if (b == 0xC5 || b == 0xD5 || b == 0xE5) {
             Reg16 r16 = (b >> 4) & 0x3;
             gb_log_inst("PUSH %s", gb_reg16_to_str(r16));
             gb_stack_push16(gb, gb_get_reg16(gb, r16));
-            gb->PC += inst.size;
         } else if (b == 0xF5) {
             gb_log_inst("PUSH AF");
             gb_stack_push16(gb, gb->AF);
-            gb->PC += inst.size;
         } else if (
             b == 0xC7 || b == 0xD7 || b == 0xE7 || b == 0xF7 ||
             b == 0xCF || b == 0xDF || b == 0xEF || b == 0xFF
@@ -1261,14 +1199,14 @@ bool gb_exec(GameBoy *gb, Inst inst)
             gb_log_inst("RST %02XH", n);
             gb_stack_push16(gb, gb->PC + inst.size);
             gb->PC = n;
+            control_flow_change = true;
         } else if (b == 0xE9) {
             gb_log_inst("JP HL");
-            u16 pc = gb->HL;
-            gb->PC = pc;
+            gb->PC = gb->HL;
+            control_flow_change = true;
         } else if (b == 0xF9) {
             gb_log_inst("LD SP,HL");
             gb->SP = gb->HL;
-            gb->PC += inst.size;
         } else {
             gb_log_inst("%02X", inst.data[0]);
             assert(0 && "Instruction not implemented");
@@ -1279,18 +1217,12 @@ bool gb_exec(GameBoy *gb, Inst inst)
         if (b == 0x10) {
             gb_log_inst("STOP");
             gb->stopped = true;
+            control_flow_change = true;
         } else if (b == 0x18) {
-            static bool infinite_loop = false;
             int r8 = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-            if (!infinite_loop) {
-                gb_log_inst("JR %d", r8);
-            }
-            if (r8 == -2 && !infinite_loop) {
-                fprintf(stderr, "Detected infinite loop...\n");
-                fprintf(stderr, "SCX: %d, SCY: %d\n", gb->memory[rSCX], gb->memory[rSCY]);
-                infinite_loop = true;
-            }
+            gb_log_inst("JR %d", r8);
             gb->PC = (gb->PC + inst.size) + r8;
+            control_flow_change = true;
         } else if ( // LD reg,d8
             b == 0x06 || b == 0x0e || b == 0x16 || b == 0x1e ||
             b == 0x26 || b == 0x2e || b == 0x36 || b == 0x3e
@@ -1298,116 +1230,88 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Reg8 reg = (b >> 3) & 7;
             gb_log_inst("LD %s,0x%02X", gb_reg8_to_str(reg), inst.data[1]);
             gb_set_reg8(gb, reg, inst.data[1]);
-            gb->PC += inst.size;
         } else if (b == 0x20 || b == 0x28 || b == 0x30 || b == 0x38) {
             Flag f = (b >> 3) & 3;
-            static bool infinite_loop = false;
-            if (!infinite_loop) {
-                gb_log_inst("JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
-            }
+            gb_log_inst("JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
             if (gb_get_flag(gb, f)) {
                 if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
                     gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
                     int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-                    if (offset == -2 && !infinite_loop) {
-                        infinite_loop = true;
-                        printf("Detected infinite loop...\n");
-                    }
                     gb->PC = (gb->PC + inst.size) + offset;
                 }
+                control_flow_change = true;
             } else {
-                gb->PC += inst.size;
                 gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
         } else if (b == 0xe0) {
             gb_log_inst("LDH (FF00+%02X),A", inst.data[1]);
-            u8 value = gb_get_reg8(gb, REG_A);
-            gb_mem_write(gb, 0xFF00 + inst.data[1], value);
-            gb->PC += inst.size;
+            gb_mem_write(gb, 0xFF00 + inst.data[1], gb->A);
         } else if (b == 0xc6) {
             gb_log_inst("ADD A,0x%02X", inst.data[1]);
-            u8 prev = gb_get_reg8(gb, REG_A);
-            u8 res = prev + inst.data[1];
-            u8 c = res < prev ? 1 : 0;
-            gb_set_reg8(gb, REG_A, res);
-            u8 h = (prev & 0xf) > (res & 0xf);
-            gb_set_flags(gb, res == 0, 0, h, c);
-            gb->PC += inst.size;
+            u8 res = gb->A + inst.data[1];
+            u8 c = res < gb->A ? 1 : 0;
+            u8 h = (gb->A & 0xf) > (res & 0xf);
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, 0, h, c);
         } else if (b == 0xce) {
             gb_log_inst("ADC A,0x%02X", inst.data[1]);
-            u8 prev = gb_get_reg8(gb, REG_A);
             u8 prev_c = gb_get_flag(gb, Flag_C);
-            u8 res = prev + inst.data[1] + prev_c;
-            int h = ((prev & 0xF) + (inst.data[1] & 0xF) + prev_c) > 0xF;
-            int c = ((prev & 0xFF) + (inst.data[1] & 0xFF) + prev_c) > 0xFF;
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, h, c);
-            gb->PC += inst.size;
+            u8 res = gb->A + inst.data[1] + prev_c;
+            int h = ((gb->A & 0xf)  + (inst.data[1] & 0xF)  + prev_c) > 0xF;
+            int c = ((gb->A & 0xff) + (inst.data[1] & 0xFF) + prev_c) > 0xFF;
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, 0, h, c);
         } else if (b == 0xd6) {
             gb_log_inst("SUB A,0x%02X", inst.data[1]);
-            u8 prev = gb_get_reg8(gb, REG_A);
-            u8 res = prev - inst.data[1];
-            u8 c = prev < inst.data[1] ? 1 : 0;
-            gb_set_reg8(gb, REG_A, res);
-            u8 h = (prev & 0xF) < (res & 0xF);
-            gb_set_flags(gb, res == 0, 1, h, c);
-            gb->PC += inst.size;
+            u8 res = gb->A - inst.data[1];
+            u8 c = gb->A < inst.data[1] ? 1 : 0;
+            u8 h = (gb->A & 0xF) < (res & 0xF);
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, 1, h, c);
         } else if (b == 0xde) {
             gb_log_inst("SBC A,0x%02X", inst.data[1]);
-            int a = gb_get_reg8(gb, REG_A);
             int n = inst.data[1];
             int prev_c = gb_get_flag(gb, Flag_C);
-            u8 res = (u8)(a - prev_c - n);
-            int h = ((a & 0xF) - (n & 0xF) - prev_c) < 0;
-            int c = ((a & 0xFF) - (n & 0xFF) - prev_c) < 0;
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 1, h, c);
-            gb->PC += inst.size;
+            u8 res = (u8)(gb->A - prev_c - n);
+            int h = ((gb->A & 0xf)  - (n & 0xf)  - prev_c) < 0;
+            int c = ((gb->A & 0xff) - (n & 0xff) - prev_c) < 0;
+            gb->A = res;
+            gb_set_flags(gb, gb->A == 0, 1, h, c);
         } else if (b == 0xe6) {
             gb_log_inst("AND A,0x%02X", inst.data[1]);
             gb->A = gb->A & inst.data[1];
             gb_set_flags(gb, gb->A == 0, 0, 1, 0);
-            gb->PC += inst.size;
-        } else if (b == 0xE8) {
+        } else if (b == 0xe8) {
             gb_log_inst("ADD SP,0x%02X", inst.data[1]);
             int res = gb->SP + (int8_t)inst.data[1];
-            int h = ((gb->SP & 0xF) + (inst.data[1] & 0xF)) > 0xF;
-            int c = ((gb->SP & 0xFF) + (inst.data[1] & 0xFF)) > 0xFF;
+            int h = ((gb->SP & 0xf)  + (inst.data[1] & 0xf))  > 0xf;
+            int c = ((gb->SP & 0xff) + (inst.data[1] & 0xff)) > 0xff;
             gb_set_flags(gb, 0, 0, h, c);
             gb->SP = res;
-            gb->PC += inst.size;
-        } else if (b == 0xF0) {
+        } else if (b == 0xf0) {
             gb_log_inst("LDH A,(FF00+%02X)", inst.data[1]);
-            u8 value = gb_mem_read(gb, 0xFF00 + inst.data[1]);
-            gb_set_reg8(gb, REG_A, value);
-            gb->PC += inst.size;
-        } else if (b == 0xF6) {
+            gb->A = gb_mem_read(gb, 0xff00 + inst.data[1]);
+        } else if (b == 0xf6) {
             gb_log_inst("OR A,0x%02X", inst.data[1]);
-            u8 res = gb_get_reg8(gb, REG_A) | inst.data[1];
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, 0, 0);
-            gb->PC += inst.size;
-        } else if (b == 0xF8) {
+            gb->A = gb->A | inst.data[1];
+            gb_set_flags(gb, gb->A == 0, 0, 0, 0);
+        } else if (b == 0xf8) {
             gb_log_inst("LD HL,SP+%d", (int8_t)inst.data[1]);
             gb->HL = gb->SP + (int8_t)inst.data[1];
-            int h = ((gb->SP & 0xF) + (inst.data[1] & 0xF)) > 0xF;
-            int c = ((gb->SP & 0xFF) + (inst.data[1] & 0xFF)) > 0xFF;
+            int h = ((gb->SP & 0xf)  + (inst.data[1] & 0xf))  > 0xf;
+            int c = ((gb->SP & 0xff) + (inst.data[1] & 0xff)) > 0xff;
             gb_set_flags(gb, 0, 0, h, c);
-            gb->PC += inst.size;
-        } else if (b == 0xEE) {
+        } else if (b == 0xee) {
             gb_log_inst("XOR 0x%02X", inst.data[1]);
-            u8 res = gb_get_reg8(gb, REG_A) ^ inst.data[1];
-            gb_set_reg8(gb, REG_A, res);
-            gb_set_flags(gb, res == 0, 0, 0, 0);
-            gb->PC += inst.size;
-        } else if (b == 0xFE) {
+            gb->A = gb->A ^ inst.data[1];
+            gb_set_flags(gb, gb->A == 0, 0, 0, 0);
+        } else if (b == 0xfe) {
             gb_log_inst("CP 0x%02X", inst.data[1]);
             int a = (int)gb_get_reg8(gb, REG_A);
             int n = (int)inst.data[1];
             u8 res = (u8)(a - n);
-            u8 h = (a & 0xF) < (res & 0xF);
+            u8 h = (a & 0xF) < (res & 0xf);
             gb_set_flags(gb, res == 0, 1, h, a < n);
-            gb->PC += inst.size;
         } else {
             printf("%02X\n", b);
             assert(0 && "Instruction not implemented");
@@ -1415,94 +1319,83 @@ bool gb_exec(GameBoy *gb, Inst inst)
     }
 
     // Prefix CB
-    else if (inst.size == 2 && inst.data[0] == 0xCB) {
+    else if (inst.size == 2 && inst.data[0] == 0xcb) {
         if (inst.data[1] <= 0x07) {
-            Reg8 reg = inst.data[1] & 0x7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("RLC %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 res = (value << 1) | (value >> 7);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x08 && inst.data[1] <= 0x0f) {
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("RRC %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 res = (value >> 1) | (value << 7);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
-            gb->PC += inst.size;
         } else if (inst.data[1] >= 0x10 && inst.data[1] <= 0x17) {
-            Reg8 reg = inst.data[1] & 0x7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("RL %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 c = gb_get_flag(gb, Flag_C);
             u8 res = (value << 1) | (c & 1);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x18 && inst.data[1] <= 0x1f) {
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("RR %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 c = gb_get_flag(gb, Flag_C);
             u8 res = (value >> 1) | (c << 7);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
-            gb->PC += inst.size;
         } else if (inst.data[1] >= 0x20 && inst.data[1] <= 0x27) {
-            Reg8 reg = inst.data[1] & 0x7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("SLA %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 res = value << 1;
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value >> 7);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x28 && inst.data[1] <= 0x2F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x28 && inst.data[1] <= 0x2f) {
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("SRA %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 res = (value & 0x80) | (value >> 1);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 1);
-            gb->PC += inst.size;
         } else if (inst.data[1] >= 0x30 && inst.data[1] <= 0x37) {
-            Reg8 reg = inst.data[1] & 0x7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("SWAP %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
-            u8 res = ((value & 0xF) << 4) | ((value & 0xF0) >> 4);
+            u8 res = ((value & 0xf) << 4) | ((value & 0xf0) >> 4);
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, 0);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3F) {
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x38 && inst.data[1] <= 0x3f) {
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("SRL %s", gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg);
             u8 res = value >> 1;
             gb_set_reg8(gb, reg, res);
             gb_set_flags(gb, res == 0, 0, 0, value & 0x1);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x40 && inst.data[1] <= 0x7F) {
-            u8 b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x40 && inst.data[1] <= 0x7f) {
+            u8 b = (inst.data[1] >> 3) & 7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("BIT %d,%s", b, gb_reg8_to_str(reg));
             u8 value = (gb_get_reg8(gb, reg) >> b) & 1;
             gb_set_flags(gb, value == 0, 0, 1, UNCHANGED);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xBF) {
-            u8 b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0x80 && inst.data[1] <= 0xbf) {
+            u8 b = (inst.data[1] >> 3) & 7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("RES %d,%s", b, gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg) & ~(1 << b);
             gb_set_reg8(gb, reg, value);
-            gb->PC += inst.size;
-        } else if (inst.data[1] >= 0xC0) {
-            u8 b = (inst.data[1] >> 3) & 0x7;
-            Reg8 reg = inst.data[1] & 0x7;
+        } else if (inst.data[1] >= 0xc0) {
+            u8 b = (inst.data[1] >> 3) & 7;
+            Reg8 reg = inst.data[1] & 7;
             gb_log_inst("SET %d,%s", b, gb_reg8_to_str(reg));
             u8 value = gb_get_reg8(gb, reg) | (1 << b);
             gb_set_reg8(gb, reg, value);
-            gb->PC += inst.size;
         } else {
             printf("%02X %02X\n", inst.data[0], inst.data[1]);
             assert(0 && "Instruction not implemented");
@@ -1512,40 +1405,32 @@ bool gb_exec(GameBoy *gb, Inst inst)
     // 3-byte instructions
     else if (inst.size == 3) {
         u16 n = inst.data[1] | (inst.data[2] << 8);
-        if (b == 0xC3) {
-            static bool infinite_loop = false;
-            if (!infinite_loop) {
-                gb_log_inst("JP 0x%04X", n);
-            }
-            if (n == gb->PC && !infinite_loop) {
-                printf("Detected infinite loop...\n");
-                infinite_loop = true;
-            }
+        if (b == 0xc3) {
+            gb_log_inst("JP 0x%04X", n);
             gb->PC = n;
+            control_flow_change = true;
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
             Reg16 reg = b >> 4;
             gb_log_inst("LD %s,0x%04X", gb_reg16_to_str(reg), n);
             gb_set_reg16(gb, reg, n);
-            gb->PC += inst.size;
         } else if (b == 0x08) {
             gb_log_inst("LD (0x%04X),SP", n);
             gb_mem_write(gb, n+0, gb->SP & 0xff);
             gb_mem_write(gb, n+1, gb->SP >> 8);
-            gb->PC += inst.size;
-        } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-            Flag f = (b >> 3) & 0x3;
+        } else if (b == 0xc2 || b == 0xca || b == 0xd2 || b == 0xda) {
+            Flag f = (b >> 3) & 3;
             gb_log_inst("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
                 if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
                     gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
                     gb->PC = n;
                 }
+                control_flow_change = true;
             } else {
-                gb->PC += inst.size;
                 gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
             }
-        } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-            Flag f = (b >> 3) & 0x3;
+        } else if (b == 0xc4 || b == 0xd4 || b == 0xcc || b == 0xdc) {
+            Flag f = (b >> 3) & 3;
             gb_log_inst("CALL %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
                 if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
@@ -1553,27 +1438,27 @@ bool gb_exec(GameBoy *gb, Inst inst)
                     gb_stack_push16(gb, gb->PC + inst.size);
                     gb->PC = n;
                 }
+                control_flow_change = true;
             } else {
                 gb->timer_mcycle -= (inst.min_cycles/4)*MCYCLE_MS;
-                gb->PC += inst.size;
             }
-        } else if (b == 0xCD) {
+        } else if (b == 0xcd) {
             gb_log_inst("CALL 0x%04X", n);
             gb_stack_push16(gb, gb->PC + inst.size);
             gb->PC = n;
-        } else if (b == 0xEA) {
+            control_flow_change = true;
+        } else if (b == 0xea) {
             gb_log_inst("LD (0x%04X),A", n);
-            gb_mem_write(gb, n, gb_get_reg8(gb, REG_A));
-            gb->PC += inst.size;
-        } else if (b == 0xFA) {
+            gb_mem_write(gb, n, gb->A);
+        } else if (b == 0xfa) {
             gb_log_inst("LD A,(0x%04X)", n);
-            gb_set_reg8(gb, REG_A, gb_mem_read(gb, n));
-            gb->PC += inst.size;
+            gb->A = gb_mem_read(gb, n);
         } else {
             assert(0 && "Not implemented");
         }
     }
 
+    if (!control_flow_change) gb->PC += inst.size;
     assert(gb->PC <= 0xffff);
     gb->inst_executed += 1;
 

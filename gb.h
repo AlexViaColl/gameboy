@@ -176,7 +176,6 @@ typedef struct GameBoy {
     u16 PC;
 
     u8 IME; // Interrupt master enable flag (Instructions EI, DI, RETI, ISR)
-    u8 ime_cycles;
 
     // Tiles, Palettes and Layers
     // Tiles are 8x8 pixels (also called patterns or characters)
