@@ -241,7 +241,6 @@ typedef struct Inst {
     const u8 *data;
     u8 size;
     u8 cycles;
-    u8 max_cycles;
 } Inst;
 
 typedef enum Reg8 {

@@ -508,101 +508,106 @@ Inst gb_fetch_inst(const GameBoy *gb)
     u8 b = gb_mem_read(gb, gb->PC);
     const u8 *data = &gb->memory[gb->PC];
 
-    if (b == 0xD3 || b == 0xDB || b == 0xDD || b == 0xE3 || b == 0xE4 ||
-        b == 0xEB || b == 0xEC || b == 0xED || b == 0xF4 || b == 0xFC || b == 0xFD)
+    if (b == 0xd3 || b == 0xdb || b == 0xdd || b == 0xe3 || b == 0xe4 ||
+        b == 0xeb || b == 0xec || b == 0xed || b == 0xf4 || b == 0xfc || b == 0xfd)
     {
         gb_dump(gb);
         fprintf(stderr, "Illegal Instruction 0x%02X\n", b);
         exit(1);
     }
 
+    u8 cc = (b >> 3) & 3;
+    u8 z = gb_get_flag(gb, Flag_Z);
+    u8 c = gb_get_flag(gb, Flag_C);
+    bool taken = ((cc == 0) && !z) || ((cc == 1) && z) || ((cc == 2) && !c) || ((cc == 3) && c);
+
     // 1-byte instructions
-    if (b == 0x00 || b == 0x76 || b == 0xF3 || b == 0xFB) { // NOP, HALT, DI, EI
-        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
+    if (b == 0x00 || b == 0x76 || b == 0xf3 || b == 0xfb) { // NOP, HALT, DI, EI
+        return (Inst){.data = data, .size = 1, .cycles = 4};
     } else if (b == 0x02 || b == 0x12 || b == 0x22 || b == 0x32) { // LD (BC),A | LD (DE),A | LD (HL-),A
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8};
     } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) { // ADD HL,n (n = BC,DE,HL,SP)
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 4) { // INC reg8: 00|xxx|100
-        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 5) { // DEC reg8: 00|xxx|101
-        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 7) { // RLCA|RRCA|RLA|RRA|DAA|CPL|SCF|CCF: 00|xxx|111
-        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 1, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 3) { // INC reg16|DEC reg16: 00|xxx|011
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 8};
     } else if ((b >> 6) == 0 && (b & 7) == 2) { // LD (reg16),A|LD A,(reg16): 00|xxx|010
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
-    } else if (b >= 0x40 && b <= 0x7F) {
+        return (Inst){.data = data, .size = 1, .cycles = 8};
+    } else if (b >= 0x40 && b <= 0x7f) {
         bool is_ld_r8_hl = (b >> 6) == 1 && (b & 7) == 6;
         bool is_ld_hl_r8 = b >= 0x70 && b <= 0x77;
         bool is_ld_hl = is_ld_r8_hl || is_ld_hl_r8;
         u8 cycles = is_ld_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .cycles = cycles, .max_cycles = cycles};
-    } else if (b >= 0x80 && b <= 0xBF) {
+        return (Inst){.data = data, .size = 1, .cycles = cycles};
+    } else if (b >= 0x80 && b <= 0xbf) {
         bool reads_hl = (b >> 6) == 2 && (b & 7) == 6;
         u8 cycles = reads_hl ? 8 : 4;
-        return (Inst){.data = data, .size = 1, .cycles = cycles, .max_cycles = cycles};
-    } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 20};
-    } else if (b == 0xC1 || b == 0xD1 || b == 0xE1 || b == 0xF1) { // POP reg16: 11|xx|0001
-        return (Inst){.data = data, .size = 1, .cycles = 12, .max_cycles = 12};
-    } else if (b == 0xC5 || b == 0xD5 || b == 0xE5 || b == 0xF5) { // PUSH reg16: 11|xx|0101
-        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 1, .cycles = cycles};
+    } else if (b == 0xc0 || b == 0xc8 || b == 0xd0 || b == 0xd8) { // RET cc
+        return (Inst){.data = data, .size = 1, .cycles = taken ? 20 : 8};
+    } else if (b == 0xc1 || b == 0xd1 || b == 0xe1 || b == 0xf1) { // POP reg16: 11|xx|0001
+        return (Inst){.data = data, .size = 1, .cycles = 12};
+    } else if (b == 0xc5 || b == 0xd5 || b == 0xe5 || b == 0xf5) { // PUSH reg16: 11|xx|0101
+        return (Inst){.data = data, .size = 1, .cycles = 16};
     } else if ((b >> 6) == 3 && (b & 7) == 7) { // RST xx: 11|xxx|111
-        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
-    } else if (b == 0xC9 || b == 0xD9) { // RET|RETI
-        return (Inst){.data = data, .size = 1, .cycles = 16, .max_cycles = 16};
-    } else if (b == 0xE2 || b == 0xF2) { // LD (C),A|LD A,(C)
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
-    } else if (b == 0xE9) { // JP (HL)
-        return (Inst){.data = data, .size = 1, .cycles = 4, .max_cycles = 4};
-    } else if (b == 0xF9) { // LD SP,HL
-        return (Inst){.data = data, .size = 1, .cycles = 8, .max_cycles = 8};
+        return (Inst){.data = data, .size = 1, .cycles = 16};
+    } else if (b == 0xc9 || b == 0xd9) { // RET|RETI
+        return (Inst){.data = data, .size = 1, .cycles = 16};
+    } else if (b == 0xe2 || b == 0xf2) { // LD (C),A|LD A,(C)
+        return (Inst){.data = data, .size = 1, .cycles = 8};
+    } else if (b == 0xe9) { // JP (HL)
+        return (Inst){.data = data, .size = 1, .cycles = 4};
+    } else if (b == 0xf9) { // LD SP,HL
+        return (Inst){.data = data, .size = 1, .cycles = 8};
     }
 
     // 2-byte instructions
     else if (b == 0x10) { // STOP
-        return (Inst){.data = data, .size = 2, .cycles = 4, .max_cycles = 4};
+        return (Inst){.data = data, .size = 2, .cycles = 4};
     } else if ((b >> 6) == 0 && (b & 7) == 6) { // LD reg8,d8|LD (HL),d8
         u8 cycles = b == 0x36 ? 12 : 8;
-        return (Inst){.data = data, .size = 2, .cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 2, .cycles = cycles};
     } else if (b == 0x18) { // JR r8
-        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
-    } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) { // JR NZ|NC|Z|C,r8
-        return (Inst){.data = data, .size = 2, .cycles = 8, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 12};
+    } else if (b == 0x20 || b == 0x28 || b == 0x30 || b == 0x38) { // JR NZ|NC|Z|C,r8
+        return (Inst){.data = data, .size = 2, .cycles = taken? 12 : 8};
     } else if ((b >> 6) == 3 && (b & 7) == 6) { // ADD|ADC|SUB|SBC|AND|XOR|OR|CP d8: 11|xxx|110
-        return (Inst){.data = data, .size = 2, .cycles = 8, .max_cycles = 8};
-    } else if (b == 0xE0 || b == 0xF0) { // LDH (a8),A|LDH A,(a8)
-        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
-    } else if (b == 0xE8) { // ADD SP,r8
-        return (Inst){.data = data, .size = 2, .cycles = 16, .max_cycles = 16};
-    } else if (b == 0xF8) { // LD HL,SP+r8
-        return (Inst){.data = data, .size = 2, .cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 2, .cycles = 8};
+    } else if (b == 0xe0 || b == 0xf0) { // LDH (a8),A|LDH A,(a8)
+        return (Inst){.data = data, .size = 2, .cycles = 12};
+    } else if (b == 0xe8) { // ADD SP,r8
+        return (Inst){.data = data, .size = 2, .cycles = 16};
+    } else if (b == 0xf8) { // LD HL,SP+r8
+        return (Inst){.data = data, .size = 2, .cycles = 12};
     }
 
     // Prefix CB
-    else if (b == 0xCB) {
+    else if (b == 0xcb) {
         u8 b2 = gb_mem_read(gb, gb->PC+1);
         u8 cycles = (b2 & 7) == 6 ? 16 : 8;
-        return (Inst){.data = data, .size = 2, .cycles = cycles, .max_cycles = cycles};
+        return (Inst){.data = data, .size = 2, .cycles = cycles};
     }
 
     // 3-byte instructions
     else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) { // LD r16,d16
-        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 12};
+        return (Inst){.data = data, .size = 3, .cycles = 12};
     } else if (b == 0x08) { // LD (a16),SP
-        return (Inst){.data = data, .size = 3, .cycles = 20, .max_cycles = 20};
-    } else if (b == 0xC3) { // JP a16
-        return (Inst){.data = data, .size = 3, .cycles = 16, .max_cycles = 16};
-    } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
-        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 24};
-    } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
-        return (Inst){.data = data, .size = 3, .cycles = 12, .max_cycles = 16};
-    } else if (b == 0xCD) { // CALL a16
-        return (Inst){.data = data, .size = 3, .cycles = 24, .max_cycles = 24};
-    } else if (b == 0xEA || b == 0xFA) { // LD (a16),A|LD A,(a16)
-        return (Inst){.data = data, .size = 3, .cycles = 16, .max_cycles = 16};
+        return (Inst){.data = data, .size = 3, .cycles = 20};
+    } else if (b == 0xc3) { // JP a16
+        return (Inst){.data = data, .size = 3, .cycles = 16};
+    } else if (b == 0xc4 || b == 0xcc || b == 0xd4 || b == 0xdc) { // CALL cc,a16
+        return (Inst){.data = data, .size = 3, .cycles = taken ? 24 : 12};
+    } else if (b == 0xc2 || b == 0xca || b == 0xd2 || b == 0xda) { // JP cc,a16
+        return (Inst){.data = data, .size = 3, .cycles = taken ? 16: 12};
+    } else if (b == 0xcd) { // CALL a16
+        return (Inst){.data = data, .size = 3, .cycles = 24};
+    } else if (b == 0xea || b == 0xfa) { // LD (a16),A|LD A,(a16)
+        return (Inst){.data = data, .size = 3, .cycles = 16};
     }
 
     printf("%02X\n", b);
@@ -616,125 +621,125 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
         if (b == 0x00) {
             snprintf(buf, size, "NOP");
         } else if (b == 0x09 || b == 0x19 || b == 0x29 || b == 0x39) {
-            Reg16 r16 = (b >> 4) & 0x3;
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "ADD HL,%s", gb_reg16_to_str(r16));
         } else if (
             b == 0x04 || b == 0x14 || b == 0x24 || b == 0x34 ||
-            b == 0x0C || b == 0x1C || b == 0x2C || b == 0x3C
+            b == 0x0c || b == 0x1c || b == 0x2c || b == 0x3c
         ) {
             Reg8 r8 = (b >> 3) & 7;
             snprintf(buf, size, "INC %s", gb_reg8_to_str(r8));
         } else if (
             b == 0x05 || b == 0x15 || b == 0x25 || b == 0x35 ||
-            b == 0x0D || b == 0x1D || b == 0x2D || b == 0x3D
+            b == 0x0d || b == 0x1d || b == 0x2d || b == 0x3d
         ) {
             Reg8 r8 = (b >> 3) & 7;
             snprintf(buf, size, "DEC %s", gb_reg8_to_str(r8));
         } else if (b == 0x07) {
             snprintf(buf, size, "RLCA");
-        } else if (b == 0x0F) {
+        } else if (b == 0x0f) {
             snprintf(buf, size, "RRCA");
         } else if (b == 0x17) {
             snprintf(buf, size, "RLA");
-        } else if (b == 0x1F) {
+        } else if (b == 0x1f) {
             snprintf(buf, size, "RRA");
         } else if (b == 0x27) {
             snprintf(buf, size, "DAA");
-        } else if (b == 0x2F) {
+        } else if (b == 0x2f) {
             snprintf(buf, size, "CPL");
         } else if (b == 0x37) {
             snprintf(buf, size, "SCF");
-        } else if (b == 0x3F) {
+        } else if (b == 0x3f) {
             snprintf(buf, size, "CCF");
-        } else if (b == 0x0A || b == 0x1A) {
-            Reg16 r16 = (b >> 4) & 0x3;
+        } else if (b == 0x0a || b == 0x1a) {
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(r16));
         } else if (b == 0x02 || b == 0x12) {
-            Reg16 r16 = (b >> 4) & 0x3;
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "LD (%s),A", gb_reg16_to_str(r16));
         } else if (b == 0x22 || b == 0x32) {
             snprintf(buf, size, "LD (HL%c),A", b == 0x22 ? '+' : '-');
-        } else if (b == 0x0A || b == 0x1A) {
-            Reg16 r16 = (b >> 4) & 0x3;
+        } else if (b == 0x0a || b == 0x1a) {
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "LD A,(%s)", gb_reg16_to_str(r16));
-        } else if (b == 0x2A || b == 0x3A) {
-            snprintf(buf, size, "LD A,(HL%c)", b == 0x2A ? '+' : '-');
+        } else if (b == 0x2a || b == 0x3a) {
+            snprintf(buf, size, "LD A,(HL%c)", b == 0x2a ? '+' : '-');
         } else if (b == 0x03 || b == 0x13 || b == 0x23 || b == 0x33) { // INC reg16
-            Reg16 r16 = (b >> 4) & 0x3;
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "INC %s", gb_reg16_to_str(r16));
-        } else if (b == 0x0B || b == 0x1B || b == 0x2B || b == 0x3B) {
-            Reg16 r16 = (b >> 4) & 0x3;
+        } else if (b == 0x0b || b == 0x1b || b == 0x2b || b == 0x3b) {
+            Reg16 r16 = (b >> 4) & 3;
             snprintf(buf, size, "DEC %s", gb_reg16_to_str(r16));
-        } else if (b >= 0x40 && b <= 0x7F) {
+        } else if (b >= 0x40 && b <= 0x7f) {
             if (b == 0x76) {
                 snprintf(buf, size, "HALT");
             }
             Reg8 src = b & 7;
-            Reg8 dst = (b >> 3) & 0x7;
+            Reg8 dst = (b >> 3) & 7;
             snprintf(buf, size, "LD %s,%s", gb_reg8_to_str(dst), gb_reg8_to_str(src));
         } else if (b >= 0x80 && b <= 0x87) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "ADD A,%s", gb_reg8_to_str(r8));
-        } else if (b >= 0x88 && b <= 0x8F) {
+        } else if (b >= 0x88 && b <= 0x8f) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "ADC A,%s", gb_reg8_to_str(r8));
         } else if (b >= 0x90 && b <= 0x97) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "SUB A,%s", gb_reg8_to_str(r8));
-        } else if (b >= 0x98 && b <= 0x9F) {
+        } else if (b >= 0x98 && b <= 0x9f) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "SBC A,%s", gb_reg8_to_str(r8));
-        } else if (b >= 0xB0 && b <= 0xB7) {
+        } else if (b >= 0xb0 && b <= 0xb7) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "OR %s", gb_reg8_to_str(r8));
-        } else if (b >= 0xB8 && b <= 0xBF) {
+        } else if (b >= 0xb8 && b <= 0xbf) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "CP %s", gb_reg8_to_str(r8));
-        } else if (b >= 0xA0 && b <= 0xA7) {
+        } else if (b >= 0xa0 && b <= 0xa7) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "AND %s", gb_reg8_to_str(r8));
-        } else if (b >= 0xA8 && b <= 0xAF) {
+        } else if (b >= 0xa8 && b <= 0xaf) {
             Reg8 r8 = b & 7;
             snprintf(buf, size, "XOR %s", gb_reg8_to_str(r8));
-        } else if (b == 0xE2) {
+        } else if (b == 0xe2) {
             snprintf(buf, size, "LD (C),A");
-        } else if (b == 0xF2) {
+        } else if (b == 0xf2) {
             snprintf(buf, size, "LD A,(C)");
-        } else if (b == 0xF3 || b == 0xFB) {
-            snprintf(buf, size, b == 0xF3 ? "DI" : "EI");
-        } else if (b == 0xC0 || b == 0xD0 || b == 0xC8 || b == 0xD8) {
-            Flag f = (b >> 3) & 0x3;
+        } else if (b == 0xf3 || b == 0xfb) {
+            snprintf(buf, size, b == 0xf3 ? "DI" : "EI");
+        } else if (b == 0xc0 || b == 0xd0 || b == 0xc8 || b == 0xd8) {
+            Flag f = (b >> 3) & 3;
             snprintf(buf, size, "RET %s", gb_flag_to_str(f));
-        } else if (b == 0xC9) {
+        } else if (b == 0xc9) {
             snprintf(buf, size, "RET");
-        } else if (b == 0xD9) {
+        } else if (b == 0xd9) {
             snprintf(buf, size, "RETI");
-        } else if (b == 0xC1 || b == 0xD1 || b == 0xE1) {
-            Reg16 reg = (b >> 4) & 0x3;
+        } else if (b == 0xc1 || b == 0xd1 || b == 0xe1) {
+            Reg16 reg = (b >> 4) & 3;
             snprintf(buf, size, "POP %s", gb_reg16_to_str(reg));
-        } else if (b == 0xF1) {
+        } else if (b == 0xf1) {
             snprintf(buf, size, "POP AF");
-        } else if (b == 0xC5 || b == 0xD5 || b == 0xE5) {
-            Reg16 reg = (b >> 4) & 0x3;
+        } else if (b == 0xc5 || b == 0xd5 || b == 0xe5) {
+            Reg16 reg = (b >> 4) & 3;
             snprintf(buf, size, "PUSH %s", gb_reg16_to_str(reg));
-        } else if (b == 0xF5) {
+        } else if (b == 0xf5) {
             snprintf(buf, size, "PUSH AF");
         } else if (
-            b == 0xC7 || b == 0xD7 || b == 0xE7 || b == 0xF7 ||
-            b == 0xCF || b == 0xDF || b == 0xEF || b == 0xFF
+            b == 0xc7 || b == 0xd7 || b == 0xe7 || b == 0xf7 ||
+            b == 0xcf || b == 0xdf || b == 0xef || b == 0xff
         ) {
-            u8 n = ((b >> 3) & 0x7)*8;
+            u8 n = ((b >> 3) & 7)*8;
             snprintf(buf, size, "RST %02XH", n);
-        } else if (b == 0xE9) {
+        } else if (b == 0xe9) {
             snprintf(buf, size, "JP HL");
-        } else if (b == 0xF9) {
+        } else if (b == 0xf9) {
             snprintf(buf, size, "LD SP,HL");
         } else {
             assert(0 && "Instruction not implemented");
         }
     }
     // 2-byte instructions
-    else if (inst.size == 2 && b != 0xCB) {
+    else if (inst.size == 2 && b != 0xcb) {
         u8 b2 = inst.data[1];
         if (b == 0x10) {
             snprintf(buf, size, "STOP");
@@ -743,38 +748,38 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
             snprintf(buf, size, "JR %d", r8);
         } else if ( // LD reg,d8
             b == 0x06 || b == 0x16 || b == 0x26 || b == 0x36 ||
-            b == 0x0E || b == 0x1E || b == 0x2E || b == 0x3E
+            b == 0x0e || b == 0x1e || b == 0x2e || b == 0x3e
         ) {
-            Reg8 reg = (b >> 3) & 0x7;
+            Reg8 reg = (b >> 3) & 7;
             snprintf(buf, size, "LD %s,0x%02X", gb_reg8_to_str(reg), b2);
         } else if (b == 0x20 || b == 0x30 || b == 0x28 || b == 0x38) {
-            Flag f = (b >> 3) & 0x3;
+            Flag f = (b >> 3) & 3;
             snprintf(buf, size, "JR %s,0x%02X", gb_flag_to_str(f), b2);
         } else if (b == 0x20) {
             snprintf(buf, size, "JR NZ,0x%02X", b2);
-        } else if (b == 0xE0) {
+        } else if (b == 0xe0) {
             snprintf(buf, size, "LDH (FF00+%02X),A", b2);
-        } else if (b == 0xC6) {
+        } else if (b == 0xc6) {
             snprintf(buf, size, "ADD A,0x%02X", b2);
-        } else if (b == 0xCE) {
+        } else if (b == 0xce) {
             snprintf(buf, size, "ADC A,0x%02X", b2);
-        } else if (b == 0xD6) {
+        } else if (b == 0xd6) {
             snprintf(buf, size, "SUB A,0x%02X", b2);
-        } else if (b == 0xDE) {
+        } else if (b == 0xde) {
             snprintf(buf, size, "SBC A,0x%02X", b2);
-        } else if (b == 0xE6) {
+        } else if (b == 0xe6) {
             snprintf(buf, size, "AND A,0x%02X", b2);
-        } else if (b == 0xE8) {
+        } else if (b == 0xe8) {
             snprintf(buf, size, "ADD SP,0x%02X", b2);
-        } else if (b == 0xF0) {
+        } else if (b == 0xf0) {
             snprintf(buf, size, "LDH A,(FF00+%02X)", b2);
-        } else if (b == 0xF6) {
+        } else if (b == 0xf6) {
             snprintf(buf, size, "OR A,0x%02X", b2);
-        } else if (b == 0xF8) {
+        } else if (b == 0xf8) {
             snprintf(buf, size, "LD HL,SP+%d", (int8_t)b2);
-        } else if (b == 0xEE) {
+        } else if (b == 0xee) {
             snprintf(buf, size, "XOR 0x%02X", b2);
-        } else if (b == 0xFE) {
+        } else if (b == 0xfe) {
             snprintf(buf, size, "CP 0x%02X", b2);
         } else {
             assert(0 && "Instruction not implemented");
@@ -782,31 +787,31 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     }
 
     // Prefix CB
-    else if (inst.size == 2 && inst.data[0] == 0xCB) {
+    else if (inst.size == 2 && inst.data[0] == 0xcb) {
         u8 b2 = inst.data[1];
         Reg8 reg = b2 & 7;
         u8 bit = (b2 >> 3) & 7;
         if (b2 <= 0x07) {
             snprintf(buf, size, "RLC %s", gb_reg8_to_str(reg));
-        } else if (b2 >= 0x08 && b2 <= 0x0F) {
+        } else if (b2 >= 0x08 && b2 <= 0x0f) {
             snprintf(buf, size, "RRC %s", gb_reg8_to_str(reg));
         } else if (b2 >= 0x10 && b2 <= 0x17) {
             snprintf(buf, size, "RL %s", gb_reg8_to_str(reg));
-        } else if (b2 >= 0x18 && b2 <= 0x1F) {
+        } else if (b2 >= 0x18 && b2 <= 0x1f) {
             snprintf(buf, size, "RR %s", gb_reg8_to_str(reg));
         } else if (b2 >= 0x20 && b2 <= 0x27) {
             snprintf(buf, size, "SLA %s", gb_reg8_to_str(reg));
-        } else if (b2 >= 0x28 && b2 <= 0x2F) {
+        } else if (b2 >= 0x28 && b2 <= 0x2f) {
             snprintf(buf, size, "SRA %s", gb_reg8_to_str(reg));
         } else if (b2 >= 0x30 && b2 <= 0x37) {
             snprintf(buf, size, "SWAP %s", gb_reg8_to_str(reg));
-        } else if (b2 >= 0x38 && b2 <= 0x3F) {
+        } else if (b2 >= 0x38 && b2 <= 0x3f) {
             snprintf(buf, size, "SRL %s", gb_reg8_to_str(reg));
-        } else if (b2 >= 0x40 && b2 <= 0x7F) {
+        } else if (b2 >= 0x40 && b2 <= 0x7f) {
             snprintf(buf, size, "BIT %d,%s", bit, gb_reg8_to_str(reg));
-        } else if (b2 >= 0x80 && b2 <= 0xBF) {
+        } else if (b2 >= 0x80 && b2 <= 0xbf) {
             snprintf(buf, size, "RES %d,%s", bit, gb_reg8_to_str(reg));
-        } else if (b2 >= 0xC0) {
+        } else if (b2 >= 0xc0) {
             snprintf(buf, size, "SET %d,%s", bit, gb_reg8_to_str(reg));
         } else {
             assert(0 && "Instruction not implemented");
@@ -817,22 +822,22 @@ const char *gb_decode(Inst inst, char *buf, size_t size)
     else if (inst.size == 3) {
         u16 n = inst.data[1] | (inst.data[2] << 8);
         Flag f = (b >> 3) & 3;
-        if (b == 0xC3) {
+        if (b == 0xc3) {
             snprintf(buf, size, "JP 0x%04X", n);
         } else if (b == 0x01 || b == 0x11 || b == 0x21 || b == 0x31) {
             Reg16 reg = b >> 4;
             snprintf(buf, size, "LD %s,0x%04X", gb_reg16_to_str(reg), n);
         } else if (b == 0x08) {
             snprintf(buf, size, "LD (0x%04X),SP", n);
-        } else if (b == 0xC2 || b == 0xCA || b == 0xD2 || b == 0xDA) {
+        } else if (b == 0xc2 || b == 0xca || b == 0xd2 || b == 0xda) {
             snprintf(buf, size, "JP %s,0x%04X", gb_flag_to_str(f), n);
-        } else if (b == 0xC4 || b == 0xD4 || b == 0xCC || b == 0xDC) {
+        } else if (b == 0xc4 || b == 0xd4 || b == 0xcc || b == 0xdc) {
             snprintf(buf, size, "CALL %s,0x%04X", gb_flag_to_str(f), n);
-        } else if (b == 0xCD) {
+        } else if (b == 0xcd) {
             snprintf(buf, size, "CALL 0x%04X", n);
-        } else if (b == 0xEA) {
+        } else if (b == 0xea) {
             snprintf(buf, size, "LD (0x%04X),A", n);
-        } else if (b == 0xFA) {
+        } else if (b == 0xfa) {
             snprintf(buf, size, "LD A,(0x%04X)", n);
         } else {
             assert(0 && "Not implemented");
@@ -952,10 +957,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
     if (gb->timer_mcycle < (inst.cycles/4)*MCYCLE_MS) {
         return false;
     }
-
-    if (inst.cycles == inst.max_cycles) {
-        gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
-    }
+    gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
 
     bool control_flow_change = false;
     u8 b = inst.data[0];
@@ -1157,10 +1159,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 0x3;
             gb_log_inst("RET %s", gb_flag_to_str(f));
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb->PC = gb_stack_pop16(gb);
-                }
+                gb->PC = gb_stack_pop16(gb);
                 control_flow_change = true;
             } else {
                 gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
@@ -1231,11 +1230,8 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 3;
             gb_log_inst("JR %s,0x%02X", gb_flag_to_str(f), inst.data[1]);
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
-                    gb->PC = (gb->PC + inst.size) + offset;
-                }
+                int offset = inst.data[1] >= 0x80 ? (int8_t)inst.data[1] : inst.data[1];
+                gb->PC = (gb->PC + inst.size) + offset;
                 control_flow_change = true;
             } else {
                 gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
@@ -1418,10 +1414,7 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 3;
             gb_log_inst("JP %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb->PC = n;
-                }
+                gb->PC = n;
                 control_flow_change = true;
             } else {
                 gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;
@@ -1430,11 +1423,8 @@ bool gb_exec(GameBoy *gb, Inst inst)
             Flag f = (b >> 3) & 3;
             gb_log_inst("CALL %s,0x%04X", gb_flag_to_str(f), n);
             if (gb_get_flag(gb, f)) {
-                if (gb->timer_mcycle >= (inst.max_cycles/4)*MCYCLE_MS) {
-                    gb->timer_mcycle -= (inst.max_cycles/4)*MCYCLE_MS;
-                    gb_stack_push16(gb, gb->PC + inst.size);
-                    gb->PC = n;
-                }
+                gb_stack_push16(gb, gb->PC + inst.size);
+                gb->PC = n;
                 control_flow_change = true;
             } else {
                 gb->timer_mcycle -= (inst.cycles/4)*MCYCLE_MS;

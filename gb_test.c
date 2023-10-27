@@ -1347,7 +1347,6 @@ void test_time_add_a_mem_hl(void)
 
     Inst inst = gb_fetch_inst(&gb);
     assert(inst.cycles == 8);
-    assert(inst.max_cycles == 8);
 
     gb_tick(&gb, 0);
     assert(gb.PC == 0);
